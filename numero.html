@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cadastre &amp; Adresses — Géoportail de Wallonie</title>
+<style>
+  :root{
+    --wal-red:#c8102e;
+    --wal-red-dark:#8f0a20;
+    --ink:#1c1b1a;
+    --paper:#f6f3ee;
+    --line:#dcd6cb;
+    --mono:"IBM Plex Mono","SFMono-Regular",Consolas,monospace;
+    --sans:"IBM Plex Sans","Segoe UI",Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--sans); line-height:1.45;
+  }
+  header{
+    background:var(--ink); color:#fff; padding:22px 28px;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  }
+  header .coq{ font-size:26px; color:var(--wal-red); }
+  header h1{ font-size:18px; margin:0; font-weight:600; letter-spacing:.2px; }
+  header p{ margin:2px 0 0; font-size:12.5px; color:#c9c5be; font-family:var(--mono);}
+
+  main{ max-width:1180px; margin:0 auto; padding:26px 20px 60px; }
+
+  .panel{
+    background:#fff; border:1px solid var(--line); border-radius:2px;
+    padding:20px 22px; margin-bottom:22px;
+  }
+  .panel h2{
+    font-size:13px; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--wal-red-dark); margin:0 0 14px; font-weight:700;
+  }
+  .grid{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:14px;
+  }
+  label{ display:block; font-size:12px; color:#5b564d; margin-bottom:4px; font-weight:600;}
+  input[type=text]{
+    width:100%; padding:9px 10px; border:1px solid #c7c1b6; border-radius:2px;
+    font-family:var(--sans); font-size:14px; background:#fdfcfa;
+  }
+  input[type=text]:focus{ outline:2px solid var(--wal-red); outline-offset:0; border-color:var(--wal-red);}
+  .row-actions{ display:flex; align-items:end; gap:10px; margin-top:14px; flex-wrap:wrap;}
+  button{
+    background:var(--wal-red); color:#fff; border:none; padding:10px 18px;
+    font-size:14px; font-weight:600; border-radius:2px; cursor:pointer;
+    font-family:var(--sans);
+  }
+  button:hover{ background:var(--wal-red-dark); }
+  button.secondary{
+    background:#fff; color:var(--ink); border:1px solid #c7c1b6;
+  }
+  button.secondary:hover{ background:#efeae1; }
+  button:disabled{ opacity:.5; cursor:not-allowed; }
+  .hint{ font-size:12px; color:#8a8478; margin-top:10px; }
+  .status{ font-family:var(--mono); font-size:12.5px; color:#5b564d; margin-top:12px; min-height:18px; }
+  .status.err{ color:var(--wal-red-dark); font-weight:600; }
+  .status.warn{ color:#a06b1a; font-weight:600; }
+
+  .progress{ height:4px; background:#ece7dd; border-radius:2px; overflow:hidden; margin-top:10px; display:none;}
+  .progress > div{ height:100%; width:0%; background:var(--wal-red); transition:width .2s; }
+
+  .results-panel{ background:#fff; border:1px solid var(--line); border-radius:2px; overflow:hidden; }
+  .results-summary{
+    padding:12px 18px; background:#faf8f4; border-bottom:1px solid var(--line);
+    font-size:12.5px; color:#5b564d; font-family:var(--mono);
+  }
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  thead th{
+    text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+    color:#8a8478; padding:9px 12px; border-bottom:1px solid var(--line);
+    position:sticky; top:0; background:#fff;
+  }
+  tbody td{ padding:7px 12px; border-bottom:1px solid #f0ece3; font-family:var(--mono); vertical-align:top; }
+  tbody tr:hover{ background:#faf6ee; }
+  tbody tr.group-start td{ border-top:2px solid var(--line); }
+  .num{ font-weight:700; color:var(--ink); }
+  .num.orphan{ color:#b7b0a2; font-style:italic; font-weight:400; }
+  .capakey{ color:var(--wal-red-dark); font-weight:700; display:block; }
+  .parcelle-sub{ color:#8a8478; font-size:11.5px; display:block; margin-top:1px; }
+  .missing{ color:#b7b0a2; font-style:italic; }
+  tr.orphan-row{ background:#faf3ee; }
+  .pays{ color:#8a8478; }
+
+  footer{ max-width:1180px; margin:0 auto; padding:0 20px 40px; font-size:12px; color:#8a8478;}
+  footer a{ color:var(--wal-red-dark); }
+  code{ background:#efeae1; padding:1px 5px; border-radius:2px; font-size:12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="coq">⌂</span>
+  <div>
+    <h1>Cadastre &amp; Adresses — Géoportail de Wallonie</h1>
+    <p>Interrogation automatique ICAR_ADR_PT + CADMAP_PARCELLES (ArcGIS REST)</p>
+  </div>
+</header>
+
+<main>
+
+  <div class="panel">
+    <h2>Critères de recherche</h2>
+    <div class="grid">
+      <div>
+        <label for="f-rue">Rue (nom ou fragment)</label>
+        <input type="text" id="f-rue" placeholder="ex. Avenue de l'Europe">
+      </div>
+      <div>
+        <label for="f-commune">Commune</label>
+        <input type="text" id="f-commune" placeholder="ex. Herstal">
+      </div>
+      <div>
+        <label for="f-cp">Code postal</label>
+        <input type="text" id="f-cp" placeholder="ex. 4040">
+      </div>
+    </div>
+    <div class="row-actions">
+      <button id="btn-search">Rechercher</button>
+      <button id="btn-csv" class="secondary" disabled>Exporter en CSV</button>
+      <span class="hint">Remplissez au moins la rue ou la commune. Trop peu de critères = recherche longue.</span>
+    </div>
+    <div class="progress" id="progress"><div id="progress-bar"></div></div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div id="results"></div>
+
+</main>
+
+<footer>
+  Sources : <a href="https://geoservices.wallonie.be/arcgis/rest/services/DONNEES_BASE/ICAR_ADR_PT/MapServer/1" target="_blank">ICAR — Points d'adresses</a>
+  et <a href="https://geoservices.wallonie.be/arcgis/rest/services/PLAN_REGLEMENT/CADMAP_PARCELLES/MapServer/0" target="_blank">Plan parcellaire cadastral (CADMAP)</a>,
+  Service public de Wallonie / AGDP. Le numéro cadastral (CAPAKEY) est déterminé par intersection géométrique
+  entre le point d'adresse ICAR et la parcelle CADMAP — à vérifier visuellement sur
+  <a href="https://geoportail.wallonie.be/walonmap" target="_blank">WalOnMap</a> en cas de doute
+  (point d'adresse mal recalé, parcelle multiple, etc.). Lorsque plusieurs numéros de rue pointent
+  vers la même parcelle cadastrale, ils sont regroupés sur une seule ligne (numéros séparés par une
+  virgule). Les lignes dont le N° affiche <code>/</code>
+  correspondent soit à un point d'adresse ICAR sans numéro renseigné, soit à une parcelle cadastrale
+  sans point d'adresse ICAR propre (aucun numéro trouvé, même sous un autre nom de rue enregistré
+  dans ICAR) mais dont la géométrie a été vérifiée comme bordant effectivement
+  (≤ 20 m) l'axe de voirie PICC de la rue recherchée — le nom de rue provient alors de cette couche
+  voirie, seul le code postal est estimé depuis l'adresse connue la plus proche ; en cas de doute,
+  vérifiez sur WalOnMap. Cette vérification des parcelles "orphelines" est effectuée rue par rue
+  (y compris pour une recherche sur toute une commune) ; une rue individuelle est ignorée si elle
+  comporte trop de parcelles ou qu'aucun axe de voirie correspondant n'est trouvé, et l'étape
+  entière est ignorée si le nombre de rues distinctes est trop élevé, afin d'éviter un blocage du
+  navigateur.
+</footer>
+
+<script>
+const ICAR_URL = "https://geoservices.wallonie.be/arcgis/rest/services/DONNEES_BASE/ICAR_ADR_PT/MapServer/1/query";
+const CAD_URL  = "https://geoservices.wallonie.be/arcgis/rest/services/PLAN_REGLEMENT/CADMAP_PARCELLES/MapServer/0/query";
+const VOIRIE_URL = "https://geoservices.wallonie.be/arcgis/rest/services/TOPOGRAPHIE/PICC_VDIFF/MapServer/21/query";
+const PAYS = "Belgique";
+
+// Seuils de garde-fou pour l'étape de vérification "parcelles orphelines bordant la rue".
+// Cette étape est maintenant effectuée RUE PAR RUE (regroupement des adresses par nom de rue
+// exact trouvé) : chaque rue a sa propre petite enveloppe géographique, ce qui rend le calcul
+// géométrique (parcelles x axes de voirie) rapide et borné, même pour une commune entière.
+const MAX_STREETS_FOR_BORDER_CHECK = 400;   // nb de rues distinctes au-delà duquel on saute l'étape entière
+const MAX_PARCELLES_PER_STREET = 800;       // nb de parcelles dans l'enveloppe d'UNE rue au-delà duquel on saute cette rue
+const STREET_CONCURRENCY = 4;               // nb de rues traitées en parallèle
+const BORDER_CHECK_CHUNK = 40;              // nb de parcelles traitées (au sein d'une rue) avant de rendre la main au navigateur
+
+const $ = (id) => document.getElementById(id);
+const statusEl = $("status");
+const progressWrap = $("progress");
+const progressBar = $("progress-bar");
+let lastRows = [];
+
+function setStatus(msg, level){
+  // level: undefined (normal), "err", "warn"
+  statusEl.textContent = msg || "";
+  statusEl.className = "status" + (level ? " " + level : "");
+}
+
+function esc(v){
+  return (v === null || v === undefined || v === "") ? "" : String(v);
+}
+
+function sqlEscape(v){
+  return v.replace(/'/g, "''");
+}
+
+// Laisse le navigateur respirer (repeindre l'UI) entre deux paquets de travail lourd
+function yieldToUI(){
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+async function fetchJson(url, params){
+  const usp = new URLSearchParams(params);
+  const res = await fetch(url + "?" + usp.toString());
+  if(!res.ok) throw new Error("HTTP " + res.status);
+  const data = await res.json();
+  if(data.error) throw new Error(data.error.message || "Erreur API ArcGIS");
+  return data;
+}
+
+// Récupère tous les points d'adresse ICAR correspondant aux filtres (pagination incluse)
+async function fetchAdresses(rue, commune, cp){
+  const clauses = [];
+  if(rue)     clauses.push(`UPPER(RUE_NM) LIKE UPPER('%${sqlEscape(rue)}%')`);
+  if(commune) clauses.push(`UPPER(COM_NM) LIKE UPPER('%${sqlEscape(commune)}%')`);
+  if(cp)      clauses.push(`CODE_POSTAL = '${sqlEscape(cp)}'`);
+  const where = clauses.length ? clauses.join(" AND ") : "1=1";
+
+  let offset = 0;
+  const pageSize = 1000;
+  let all = [];
+  while(true){
+    const data = await fetchJson(ICAR_URL, {
+      where,
+      outFields: "ADR_NUMERO,RUE_NM,CODE_POSTAL,COM_NM,COM_INS",
+      returnGeometry: "true",
+      outSR: "31370",
+      resultRecordCount: pageSize,
+      resultOffset: offset,
+      orderByFields: "COM_NM,RUE_NM,ADR_NUMERO",
+      f: "json"
+    });
+    const feats = data.features || [];
+    all = all.concat(feats);
+    if(feats.length < pageSize) break;
+    offset += pageSize;
+    if(offset > 20000) break; // garde-fou
+  }
+  return all;
+}
+
+// Trouve la parcelle cadastrale contenant un point (x,y en Lambert72 EPSG:31370)
+async function findParcelle(x, y){
+  const geometry = JSON.stringify({ x, y, spatialReference: { wkid: 31370 } });
+  const data = await fetchJson(CAD_URL, {
+    geometry,
+    geometryType: "esriGeometryPoint",
+    inSR: "31370",
+    spatialRel: "esriSpatialRelIntersects",
+    outFields: "CAPAKEY,NOM_COMMUNE,DIV_NOM,SECT,RADICAL,BIS,EXPOSANT,PUISSANCE",
+    returnGeometry: "false",
+    f: "json"
+  });
+  const feats = data.features || [];
+  return feats.length ? feats[0].attributes : null;
+}
+
+// Récupère toutes les parcelles cadastrales (avec géométrie) intersectant une enveloppe (bbox)
+async function fetchParcellesInEnvelope(xmin, ymin, xmax, ymax){
+  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
+  let offset = 0;
+  const pageSize = 1000;
+  let all = [];
+  while(true){
+    const data = await fetchJson(CAD_URL, {
+      geometry,
+      geometryType: "esriGeometryEnvelope",
+      inSR: "31370",
+      spatialRel: "esriSpatialRelIntersects",
+      outFields: "CAPAKEY,NOM_COMMUNE,DIV_NOM,SECT,RADICAL,BIS,EXPOSANT,PUISSANCE",
+      returnGeometry: "true",
+      outSR: "31370",
+      resultRecordCount: pageSize,
+      resultOffset: offset,
+      f: "json"
+    });
+    const feats = data.features || [];
+    all = all.concat(feats);
+    if(feats.length < pageSize) break;
+    offset += pageSize;
+    if(offset > 20000) break; // garde-fou
+  }
+  return all;
+}
+
+// Récupère TOUS les points d'adresse ICAR présents dans une enveloppe, sans filtre de rue.
+async function fetchAdressesInEnvelope(xmin, ymin, xmax, ymax){
+  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
+  let offset = 0;
+  const pageSize = 1000;
+  let all = [];
+  while(true){
+    const data = await fetchJson(ICAR_URL, {
+      where: "1=1",
+      geometry,
+      geometryType: "esriGeometryEnvelope",
+      inSR: "31370",
+      spatialRel: "esriSpatialRelIntersects",
+      outFields: "ADR_NUMERO,RUE_NM,CODE_POSTAL,COM_NM",
+      returnGeometry: "true",
+      outSR: "31370",
+      resultRecordCount: pageSize,
+      resultOffset: offset,
+      f: "json"
+    });
+    const feats = data.features || [];
+    all = all.concat(feats);
+    if(feats.length < pageSize) break;
+    offset += pageSize;
+    if(offset > 20000) break; // garde-fou
+  }
+  return all;
+}
+
+function boundsFromRingsList(parcelList){
+  let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
+  for(const p of parcelList){
+    if(!p.geometry || !p.geometry.rings) continue;
+    for(const ring of p.geometry.rings){
+      for(const pt of ring){
+        const x = pt[0], y = pt[1];
+        if(x < xmin) xmin = x;
+        if(x > xmax) xmax = x;
+        if(y < ymin) ymin = y;
+        if(y > ymax) ymax = y;
+      }
+    }
+  }
+  return { xmin, ymin, xmax, ymax };
+}
+
+async function fetchVoirieAxe(rue, commune, xmin, ymin, xmax, ymax){
+  const clauses = [];
+  if(rue){
+    const r = sqlEscape(rue);
+    clauses.push(`(UPPER(RUE_NOM1) LIKE UPPER('%${r}%') OR UPPER(RUE_NOM2) LIKE UPPER('%${r}%'))`);
+  }
+  if(commune){
+    const c = sqlEscape(commune);
+    clauses.push(`(UPPER(COMMU_NOM1) LIKE UPPER('%${c}%') OR UPPER(COMMU_NOM2) LIKE UPPER('%${c}%'))`);
+  }
+  const where = clauses.length ? clauses.join(" AND ") : "1=1";
+  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
+  let offset = 0;
+  const pageSize = 1000;
+  let all = [];
+  while(true){
+    const data = await fetchJson(VOIRIE_URL, {
+      where,
+      geometry,
+      geometryType: "esriGeometryEnvelope",
+      inSR: "31370",
+      spatialRel: "esriSpatialRelIntersects",
+      outFields: "RUE_NOM1,COMMU_NOM1,RUE_NOM2,COMMU_NOM2",
+      returnGeometry: "true",
+      outSR: "31370",
+      resultRecordCount: pageSize,
+      resultOffset: offset,
+      f: "json"
+    });
+    const feats = data.features || [];
+    all = all.concat(feats);
+    if(feats.length < pageSize) break;
+    offset += pageSize;
+    if(offset > 5000) break; // garde-fou
+  }
+  return all;
+}
+
+function distPointToSegment(px, py, x1, y1, x2, y2){
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx*dx + dy*dy;
+  let t = lenSq === 0 ? 0 : ((px - x1)*dx + (py - y1)*dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const cx = x1 + t*dx, cy = y1 + t*dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+function segmentsIntersect(ax1,ay1,ax2,ay2, bx1,by1,bx2,by2){
+  function cross(ox,oy,ax,ay,bx,by){ return (ax-ox)*(by-oy) - (ay-oy)*(bx-ox); }
+  const d1 = cross(bx1,by1,bx2,by2,ax1,ay1);
+  const d2 = cross(bx1,by1,bx2,by2,ax2,ay2);
+  const d3 = cross(ax1,ay1,ax2,ay2,bx1,by1);
+  const d4 = cross(ax1,ay1,ax2,ay2,bx2,by2);
+  return ((d1>0&&d2<0)||(d1<0&&d2>0)) && ((d3>0&&d4<0)||(d3<0&&d4>0));
+}
+
+function distSegToSeg(ax1,ay1,ax2,ay2, bx1,by1,bx2,by2){
+  if(segmentsIntersect(ax1,ay1,ax2,ay2, bx1,by1,bx2,by2)) return 0;
+  return Math.min(
+    distPointToSegment(ax1,ay1, bx1,by1,bx2,by2),
+    distPointToSegment(ax2,ay2, bx1,by1,bx2,by2),
+    distPointToSegment(bx1,by1, ax1,ay1,ax2,ay2),
+    distPointToSegment(bx2,by2, ax1,ay1,ax2,ay2)
+  );
+}
+
+function distRingsToPaths(rings, paths){
+  let min = Infinity;
+  for(const ring of rings){
+    for(let i=0;i<ring.length;i++){
+      const j = (i+1) % ring.length;
+      const [ax1,ay1] = ring[i], [ax2,ay2] = ring[j];
+      for(const path of paths){
+        for(let k=0;k<path.length-1;k++){
+          const [bx1,by1] = path[k], [bx2,by2] = path[k+1];
+          const d = distSegToSeg(ax1,ay1,ax2,ay2, bx1,by1,bx2,by2);
+          if(d < min) min = d;
+          if(min === 0) return 0;
+        }
+      }
+    }
+  }
+  return min;
+}
+
+function pointInRings(x, y, rings){
+  let inside = false;
+  for(const ring of rings){
+    for(let i = 0, j = ring.length - 1; i < ring.length; j = i++){
+      const xi = ring[i][0], yi = ring[i][1];
+      const xj = ring[j][0], yj = ring[j][1];
+      const intersect = ((yi > y) !== (yj > y)) &&
+        (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+      if(intersect) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function ringCentroid(rings){
+  const ring = rings[0];
+  let sx = 0, sy = 0;
+  for(const [x, y] of ring){ sx += x; sy += y; }
+  return { x: sx / ring.length, y: sy / ring.length };
+}
+
+function formatParcelle(a){
+  if(!a) return null;
+  let n = (a.RADICAL || "").replace(/^0+/, "") || a.RADICAL || "";
+  if(a.BIS && a.BIS !== "0" && a.BIS !== "00") n += "/" + a.BIS.replace(/^0+/, "");
+  if(a.EXPOSANT && a.EXPOSANT.trim()) n += a.EXPOSANT.trim();
+  if(a.PUISSANCE && parseInt(a.PUISSANCE, 10) > 0) n += a.PUISSANCE.replace(/^0+/, "");
+  return { display: n, capakey: a.CAPAKEY };
+}
+
+// Traite UNE rue (un groupe d'adresses partageant la même commune + le même nom de rue exact) :
+// cherche les parcelles cadastrales de sa petite enveloppe qui n'ont pas de point d'adresse ICAR
+// propre mais bordent effectivement l'axe de voirie de cette rue. Portée volontairement réduite
+// à une seule rue, donc bbox et nb de parcelles/axes restent petits et rapides à traiter.
+async function processStreetGroup(group, matchedCapakeys, onProgress){
+  const { commune, rue, rows } = group; // rows = adresses (avec coordonnées) de cette rue précise
+  const MARGIN = 30;
+  const ROAD_MAX = 20;
+
+  const xs = rows.map(r => r._x), ys = rows.map(r => r._y);
+  const xmin = Math.min(...xs) - MARGIN, xmax = Math.max(...xs) + MARGIN;
+  const ymin = Math.min(...ys) - MARGIN, ymax = Math.max(...ys) + MARGIN;
+
+  const [parcelles, axes] = await Promise.all([
+    fetchParcellesInEnvelope(xmin, ymin, xmax, ymax),
+    fetchVoirieAxe(rue, commune, xmin, ymin, xmax, ymax)
+  ]);
+
+  if(parcelles.length > MAX_PARCELLES_PER_STREET){
+    return { orphanRows: [], skipped: true, reason: `trop de parcelles (${parcelles.length})` };
+  }
+  if(!axes.length){
+    return { orphanRows: [], skipped: true, reason: "aucun axe de voirie trouvé" };
+  }
+
+  const AX_MARGIN = 15;
+  const pb = boundsFromRingsList(parcelles);
+  const envelopeAddrs = isFinite(pb.xmin)
+    ? await fetchAdressesInEnvelope(pb.xmin - AX_MARGIN, pb.ymin - AX_MARGIN, pb.xmax + AX_MARGIN, pb.ymax + AX_MARGIN)
+    : [];
+
+  const candidates = parcelles.filter(p => !matchedCapakeys.has(p.attributes.CAPAKEY) && p.geometry && p.geometry.rings);
+  const orphanRows = [];
+
+  for(let idx = 0; idx < candidates.length; idx++){
+    const p = candidates[idx];
+    const a = p.attributes;
+
+    let bestAxis = null, bestAxisDist = Infinity;
+    for(const ax of axes){
+      if(!ax.geometry || !ax.geometry.paths) continue;
+      const d = distRingsToPaths(p.geometry.rings, ax.geometry.paths);
+      if(d < bestAxisDist){ bestAxisDist = d; bestAxis = ax; }
+    }
+
+    if(bestAxis && bestAxisDist <= ROAD_MAX){
+      const fmt = formatParcelle(a);
+      const innerAddrs = envelopeAddrs.filter(af => {
+        const g = af.geometry;
+        return g && typeof g.x === "number" && typeof g.y === "number" &&
+          pointInRings(g.x, g.y, p.geometry.rings);
+      });
+
+      if(innerAddrs.length){
+        const numsSet = [...new Set(innerAddrs.map(af => {
+          const n = af.attributes.ADR_NUMERO;
+          return (n === null || n === undefined || String(n).trim() === "") ? "/" : String(n);
+        }))];
+        const first = innerAddrs[0].attributes;
+        orphanRows.push({
+          commune: first.COM_NM || "(commune inconnue)",
+          rue: first.RUE_NM || "(rue inconnue)",
+          cp: first.CODE_POSTAL || "",
+          numero: sortNumeroList(numsSet).join(", "),
+          capakey: fmt ? fmt.capakey : a.CAPAKEY,
+          parcelleDisplay: fmt ? fmt.display : ""
+        });
+      } else {
+        const attrs = bestAxis.attributes;
+        let rueNom = attrs.RUE_NOM1, communeNom = attrs.COMMU_NOM1;
+        const rUp = rue.toUpperCase();
+        const n1Match = attrs.RUE_NOM1 && attrs.RUE_NOM1.toUpperCase().includes(rUp);
+        const n2Match = attrs.RUE_NOM2 && attrs.RUE_NOM2.toUpperCase().includes(rUp);
+        if(n2Match && !n1Match){ rueNom = attrs.RUE_NOM2; communeNom = attrs.COMMU_NOM2; }
+        if(!rueNom){ rueNom = attrs.RUE_NOM2 || attrs.RUE_NOM1; communeNom = attrs.COMMU_NOM2 || attrs.COMMU_NOM1; }
+
+        const c = ringCentroid(p.geometry.rings);
+        let bestAddr = null, bestAddrDist = Infinity;
+        for(const r of rows){
+          const d = Math.hypot(r._x - c.x, r._y - c.y);
+          if(d < bestAddrDist){ bestAddrDist = d; bestAddr = r; }
+        }
+
+        orphanRows.push({
+          commune: communeNom || (bestAddr ? bestAddr.commune : commune),
+          rue: rueNom || (bestAddr ? bestAddr.rue : rue),
+          cp: bestAddr ? bestAddr.cp : "",
+          numero: "/",
+          capakey: fmt ? fmt.capakey : a.CAPAKEY,
+          parcelleDisplay: fmt ? fmt.display : ""
+        });
+      }
+    }
+
+    if(idx % BORDER_CHECK_CHUNK === 0 || idx === candidates.length - 1){
+      if(onProgress) onProgress();
+      await yieldToUI();
+    }
+  }
+
+  return { orphanRows, skipped: false };
+}
+
+async function mapLimit(items, limit, worker){
+  const results = new Array(items.length);
+  let i = 0;
+  async function run(){
+    while(i < items.length){
+      const idx = i++;
+      results[idx] = await worker(items[idx], idx);
+      progressBar.style.width = Math.round((i / items.length) * 100) + "%";
+    }
+  }
+  await Promise.all(Array.from({length: Math.min(limit, items.length)}, run));
+  return results;
+}
+
+function sortNumeroList(nums){
+  return nums.sort((a, b) => {
+    const na = parseInt(a, 10), nb = parseInt(b, 10);
+    const aOrphan = isNaN(na), bOrphan = isNaN(nb);
+    if(aOrphan && bOrphan) return String(a).localeCompare(String(b));
+    if(aOrphan) return 1;
+    if(bOrphan) return -1;
+    return na - nb;
+  });
+}
+
+function mergeByParcelle(rows){
+  const byKey = new Map();
+  const result = [];
+  for(const r of rows){
+    if(r.capakey){
+      const existing = byKey.get(r.capakey);
+      if(existing){
+        const nums = existing.numero.split(",").map(s => s.trim());
+        if(!nums.includes(r.numero)){
+          nums.push(r.numero);
+          existing.numero = sortNumeroList(nums).join(", ");
+        }
+        continue;
+      }
+      const copy = Object.assign({}, r);
+      byKey.set(r.capakey, copy);
+      result.push(copy);
+    } else {
+      result.push(r);
+    }
+  }
+  return result;
+}
+
+function numSort(a, b){
+  if(a.commune !== b.commune) return a.commune.localeCompare(b.commune);
+  if(a.rue !== b.rue) return a.rue.localeCompare(b.rue);
+  const firstNumA = String(a.numero).split(",")[0].trim();
+  const firstNumB = String(b.numero).split(",")[0].trim();
+  const na = parseInt(firstNumA, 10), nb = parseInt(firstNumB, 10);
+  const aOrphan = isNaN(na), bOrphan = isNaN(nb);
+  if(aOrphan && bOrphan) return String(a.capakey||"").localeCompare(String(b.capakey||""));
+  if(aOrphan) return 1;
+  if(bOrphan) return -1;
+  return na - nb;
+}
+
+function render(rows){
+  lastRows = rows;
+  const container = $("results");
+  container.innerHTML = "";
+  if(!rows.length){
+    container.innerHTML = "<div class='panel'>Aucun résultat pour ces critères.</div>";
+    $("btn-csv").disabled = true;
+    return;
+  }
+
+  const sorted = [...rows].sort(numSort);
+  const communeCount = new Set(sorted.map(r => r.commune)).size;
+
+  const panel = document.createElement("div");
+  panel.className = "results-panel";
+
+  const summary = document.createElement("div");
+  summary.className = "results-summary";
+  summary.textContent = `${sorted.length} ligne(s) — ${communeCount} commune(s)`;
+  panel.appendChild(summary);
+
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr>
+      <th>Pays</th><th>Code postal</th><th>Commune</th><th>Rue</th>
+      <th>N°</th><th>Parcelle</th>
+    </tr></thead>
+    <tbody></tbody>`;
+  const tbody = table.querySelector("tbody");
+
+  let prevKey = null;
+  sorted.forEach(r => {
+    const groupKey = r.commune + "||" + r.rue;
+    const tr = document.createElement("tr");
+    const classes = [];
+    if(r.numero === "/") classes.push("orphan-row");
+    if(groupKey !== prevKey) classes.push("group-start");
+    if(classes.length) tr.className = classes.join(" ");
+    prevKey = groupKey;
+
+    const parcelleCell = r.parcelleDisplay
+      ? `<span class="capakey">${esc(r.parcelleDisplay)}</span>`
+      : `<span class="missing">non trouvé</span>`;
+
+    tr.innerHTML = `
+      <td class="pays">${esc(PAYS)}</td>
+      <td>${esc(r.cp)}</td>
+      <td>${esc(r.commune)}</td>
+      <td>${esc(r.rue)}</td>
+      <td class="num${r.numero === '/' ? ' orphan' : ''}">${esc(r.numero)}</td>
+      <td>${parcelleCell}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  panel.appendChild(table);
+  container.appendChild(panel);
+  $("btn-csv").disabled = false;
+}
+
+async function runSearch(){
+  const rue = $("f-rue").value.trim();
+  const commune = $("f-commune").value.trim();
+  const cp = $("f-cp").value.trim();
+
+  if(!rue && !commune && !cp){
+    setStatus("Indiquez au moins une rue, une commune ou un code postal.", "err");
+    return;
+  }
+
+  $("btn-search").disabled = true;
+  $("btn-csv").disabled = true;
+  $("results").innerHTML = "";
+  progressWrap.style.display = "block";
+  progressBar.style.width = "0%";
+
+  try{
+    setStatus("Recherche des points d'adresse (ICAR)…");
+    const feats = await fetchAdresses(rue, commune, cp);
+
+    if(!feats.length){
+      setStatus("Aucune adresse trouvée dans ICAR pour ces critères.", "err");
+      progressWrap.style.display = "none";
+      render([]);
+      return;
+    }
+    if(feats.length > 800){
+      setStatus(`${feats.length} adresses trouvées — la recherche du numéro cadastral pour chacune peut prendre plusieurs minutes. Affinez la recherche (rue précise) si possible.`, "warn");
+    } else {
+      setStatus(`${feats.length} adresse(s) trouvée(s). Recherche des parcelles cadastrales…`);
+    }
+
+    const matchedCapakeys = new Set();
+
+    const addressRows = await mapLimit(feats, 6, async (f) => {
+      const a = f.attributes;
+      const g = f.geometry;
+      let capakey = null, parcelleDisplay = null;
+      if(g && typeof g.x === "number" && typeof g.y === "number"){
+        try{
+          const parc = await findParcelle(g.x, g.y);
+          const fmt = formatParcelle(parc);
+          if(fmt){
+            capakey = fmt.capakey;
+            parcelleDisplay = fmt.display;
+            matchedCapakeys.add(capakey);
+          }
+        }catch(e){ /* on continue même si une parcelle échoue */ }
+      }
+      const numero = (a.ADR_NUMERO === null || a.ADR_NUMERO === undefined || String(a.ADR_NUMERO).trim() === "")
+        ? "/" : String(a.ADR_NUMERO);
+      return {
+        commune: a.COM_NM || "(commune inconnue)",
+        rue: a.RUE_NM || "(rue inconnue)",
+        cp: a.CODE_POSTAL || "",
+        numero,
+        capakey, parcelleDisplay,
+        _x: g && g.x, _y: g && g.y
+      };
+    });
+
+    // --- Étape : parcelles sans point d'adresse mais bordant une rue recherchée ---
+    // Traitée RUE PAR RUE : on regroupe les adresses par (commune, nom de rue exact), puis on
+    // lance la vérification géométrique sur l'enveloppe (réduite) de chaque rue séparément. Ça
+    // marche aussi bien pour "toute la commune" (des dizaines/centaines de petits groupes) que
+    // pour une rue précise (un seul groupe) — et ça reste rapide car chaque enveloppe est petite.
+    let orphanRows = [];
+    let skippedStreets = 0;
+    const withCoords = addressRows.filter(r => typeof r._x === "number");
+
+    if(withCoords.length === 0){
+      // rien à faire, pas de coordonnées exploitables
+    } else {
+      const groupsMap = new Map();
+      for(const r of withCoords){
+        const key = r.commune + "||" + r.rue;
+        if(!groupsMap.has(key)) groupsMap.set(key, { commune: r.commune, rue: r.rue, rows: [] });
+        groupsMap.get(key).rows.push(r);
+      }
+      const groups = Array.from(groupsMap.values());
+
+      if(groups.length > MAX_STREETS_FOR_BORDER_CHECK){
+        setStatus(`${addressRows.length} adresse(s) traitée(s). Étape "parcelles bordant la rue" ignorée : trop de rues distinctes (${groups.length} > ${MAX_STREETS_FOR_BORDER_CHECK}) pour rester dans un temps raisonnable. Précisez davantage la rue/commune pour l'activer.`, "warn");
+      } else {
+        try{
+          let done = 0;
+          const perStreetResults = await mapLimit(groups, STREET_CONCURRENCY, async (group) => {
+            setStatus(`Vérification des parcelles bordant la rue… (rue ${done + 1}/${groups.length} : ${group.rue}, ${group.commune})`);
+            let res;
+            try{
+              res = await processStreetGroup(group, matchedCapakeys, () => {
+                setStatus(`Vérification des parcelles bordant la rue… (rue ${done + 1}/${groups.length} : ${group.rue}, ${group.commune})`);
+              });
+            }catch(e){
+              res = { orphanRows: [], skipped: true, reason: e.message };
+            }
+            done++;
+            progressBar.style.width = Math.round((done / groups.length) * 100) + "%";
+            return res;
+          });
+
+          for(const r of perStreetResults){
+            if(r.skipped) skippedStreets++;
+            else orphanRows = orphanRows.concat(r.orphanRows);
+          }
+        }catch(e){
+          setStatus("Adresses récupérées, mais échec de la vérification des parcelles voisines : " + e.message, "err");
+        }
+      }
+    }
+
+    const rows = mergeByParcelle(addressRows.concat(orphanRows));
+    progressWrap.style.display = "none";
+    const skipNote = skippedStreets ? ` (${skippedStreets} rue(s) ignorée(s) car trop de parcelles ou pas d'axe de voirie trouvé)` : "";
+    setStatus(`Terminé — ${addressRows.length} adresse(s) (${addressRows.filter(r=>r.capakey).length} avec n° cadastral), + ${orphanRows.length} parcelle(s) sans point d'adresse${skipNote}. ${addressRows.length + orphanRows.length - rows.length} ligne(s) fusionnée(s) par numéro cadastral commun.`);
+    render(rows);
+
+  }catch(err){
+    progressWrap.style.display = "none";
+    setStatus("Erreur : " + err.message + " — si l'appel est bloqué par le navigateur (CORS), essayez depuis un autre réseau ou via un proxy CORS.", "err");
+  }finally{
+    $("btn-search").disabled = false;
+  }
+}
+
+function exportCsv(){
+  if(!lastRows.length) return;
+  const sorted = [...lastRows].sort(numSort);
+  const header = ["Pays","Code postal","Commune","Rue","Numero","Parcelle"];
+  const lines = [header.join(";")];
+  for(const r of sorted){
+    lines.push([PAYS, r.cp, r.commune, r.rue, r.numero, r.parcelleDisplay||""]
+      .map(v => `"${String(v).replace(/"/g,'""')}"`).join(";"));
+  }
+  const blob = new Blob(["\uFEFF" + lines.join("\n")], {type:"text/csv;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "cadastre_adresses.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+$("btn-search").addEventListener("click", runSearch);
+$("btn-csv").addEventListener("click", exportCsv);
+[$("f-rue"), $("f-commune"), $("f-cp")].forEach(inp=>{
+  inp.addEventListener("keydown", e=>{ if(e.key === "Enter") runSearch(); });
+});
+</script>
+
+</body>
+</html>
