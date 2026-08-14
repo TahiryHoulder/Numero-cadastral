@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cadastre &amp; Adresses — Géoportail de Wallonie</title>
+<title>Cadastre, Plan de secteur, Captages &amp; Assainissement — Géoportail de Wallonie</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --wal-red:#c8102e;
@@ -37,6 +38,11 @@
     font-size:13px; text-transform:uppercase; letter-spacing:.08em;
     color:var(--wal-red-dark); margin:0 0 14px; font-weight:700;
   }
+  .panel h2 .step-badge{
+    display:inline-block; background:var(--wal-red-dark); color:#fff;
+    border-radius:50%; width:20px; height:20px; text-align:center;
+    line-height:20px; font-size:11px; margin-right:8px;
+  }
   .grid{
     display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
     gap:14px;
@@ -60,9 +66,10 @@
   button.secondary:hover{ background:#efeae1; }
   button:disabled{ opacity:.5; cursor:not-allowed; }
   .hint{ font-size:12px; color:#8a8478; margin-top:10px; }
-  .status{ font-family:var(--mono); font-size:12.5px; color:#5b564d; margin-top:12px; min-height:18px; }
+  .status{ font-family:var(--mono); font-size:12.5px; color:#5b564d; margin-top:12px; min-height:18px; white-space:pre-wrap;}
   .status.err{ color:var(--wal-red-dark); font-weight:600; }
   .status.warn{ color:#a06b1a; font-weight:600; }
+  .status.ok{ color:#2c7a3e; font-weight:600; }
 
   .progress{ height:4px; background:#ece7dd; border-radius:2px; overflow:hidden; margin-top:10px; display:none;}
   .progress > div{ height:100%; width:0%; background:var(--wal-red); transition:width .2s; }
@@ -72,26 +79,32 @@
     padding:12px 18px; background:#faf8f4; border-bottom:1px solid var(--line);
     font-size:12.5px; color:#5b564d; font-family:var(--mono);
   }
-  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  table{ width:100%; border-collapse:collapse; font-size:12.5px; }
   thead th{
-    text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em;
-    color:#8a8478; padding:9px 12px; border-bottom:1px solid var(--line);
-    position:sticky; top:0; background:#fff;
+    text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em;
+    color:#8a8478; padding:8px 10px; border-bottom:1px solid var(--line);
+    position:sticky; top:0; background:#fff; white-space:nowrap;
   }
-  tbody td{ padding:7px 12px; border-bottom:1px solid #f0ece3; font-family:var(--mono); vertical-align:top; }
+  tbody td{ padding:6px 10px; border-bottom:1px solid #f0ece3; font-family:var(--mono); vertical-align:top; white-space:nowrap;}
   tbody tr:hover{ background:#faf6ee; }
   tbody tr.group-start td{ border-top:2px solid var(--line); }
   .num{ font-weight:700; color:var(--ink); }
   .num.orphan{ color:#b7b0a2; font-style:italic; font-weight:400; }
   .capakey{ color:var(--wal-red-dark); font-weight:700; display:block; }
-  .parcelle-sub{ color:#8a8478; font-size:11.5px; display:block; margin-top:1px; }
   .missing{ color:#b7b0a2; font-style:italic; }
   tr.orphan-row{ background:#faf3ee; }
   .pays{ color:#8a8478; }
+  .o{ color:#2c7a3e; font-weight:700; }
+  .n{ color:#b7b0a2; }
+  .qm{ color:#a06b1a; font-weight:700; }
+  .tablewrap{ overflow-x:auto; max-height:520px; overflow-y:auto; }
 
   footer{ max-width:1180px; margin:0 auto; padding:0 20px 40px; font-size:12px; color:#8a8478;}
   footer a{ color:var(--wal-red-dark); }
   code{ background:#efeae1; padding:1px 5px; border-radius:2px; font-size:12px; }
+  .roadmap{ font-size:12.5px; color:#5b564d; }
+  .roadmap li{ margin-bottom:4px; }
+  .roadmap li.done{ color:#2c7a3e; }
 </style>
 </head>
 <body>
@@ -99,8 +112,8 @@
 <header>
   <span class="coq">⌂</span>
   <div>
-    <h1>Cadastre &amp; Adresses — Géoportail de Wallonie</h1>
-    <p>Interrogation automatique ICAR_ADR_PT + CADMAP_PARCELLES (ArcGIS REST)</p>
+    <h1>Cadastre, Adresses &amp; Plan de secteur — Géoportail de Wallonie</h1>
+    <p>ICAR_ADR_PT + CADMAP_PARCELLES + AMENAGEMENT_TERRITOIRE/PDS (ArcGIS REST)</p>
   </div>
 </header>
 
@@ -123,78 +136,250 @@
       </div>
     </div>
     <div class="row-actions">
-      <button id="btn-search">Rechercher</button>
-      <button id="btn-csv" class="secondary" disabled>Exporter en CSV</button>
+      <button id="btn-search">Rechercher (adresses + cadastre + plan de secteur)</button>
       <span class="hint">Remplissez au moins la rue ou la commune. Trop peu de critères = recherche longue.</span>
     </div>
     <div class="progress" id="progress"><div id="progress-bar"></div></div>
     <div class="status" id="status"></div>
   </div>
 
+  <div class="panel" id="panel-step2" style="display:none;">
+    <h2>Plan de secteur, captages, assainissement, SDC/SOL &amp; GRU/GCU (colonnes G à BJ)</h2>
+    <p class="hint" style="margin-top:0;">
+      Interroge automatiquement, juste après la recherche d'adresses : <code>AMENAGEMENT_TERRITOIRE/PDS/MapServer</code>
+      (zones d'affectation G-AF + périmètres AG-AM), <code>AMENAGEMENT_TERRITOIRE/SDC/MapServer</code> (Schéma de
+      Développement Communal + anciens Schémas de Structure Communaux, colonne AO + lien AP),
+      <code>AMENAGEMENT_TERRITOIRE/SOL/MapServer</code> (Schéma d'Orientation Local, colonne AQ),
+      <code>AMENAGEMENT_TERRITOIRE/GRU/MapServer</code> (Guide Régional d'Urbanisme : zones protégées en matière
+      d'urbanisme AR, règlement sur les bâtisses en site rural AS, qualité acoustique des constructions AT),
+      <code>AMENAGEMENT_TERRITOIRE/GCU/MapServer</code> (Guide Communal d'Urbanisme + anciens RCB/RCU, colonne AU),
+      <code>EAU/PROTECT_CAPT/MapServer</code> (zones de captage BB-BF),
+      et <code>WebPash/WebPASH/MapServer</code> sur <strong>sig.spge.be</strong> (régime d'assainissement BG-BJ).
+      Ce dernier service est sur un <strong>domaine différent</strong> de geoservices.wallonie.be : si le navigateur bloque
+      la requête (CORS), les colonnes BG-BJ resteront à N et un avertissement s'affichera — le reste du résultat n'est pas affecté.
+      Les colonnes <strong>zone de recul</strong> et <strong>zone d'accès et de stationnement</strong> sont interrogées
+      via les couches 4 et 5 du même service (prescriptions ponctuelles) : réponse le plus souvent "N" (prescription rare),
+      mais bien vérifiée à chaque adresse. Seule <strong>aire d'habitat</strong> reste à <code>/</code> (colonne non
+      déduite d'une couche dans la méthode d'origine).
+      Pour la colonne <strong>AP</strong> (lien du SDC), le lien est repris directement du champ <code>LIENDOC</code> de la
+      couche SDC lorsqu'il existe (plus fiable qu'une recherche manuelle sur Google) ; à défaut la cellule reste à
+      <code>/</code>.
+    </p>
+    <div class="row-actions">
+      <button id="btn-xlsx" class="secondary" disabled>Exporter en XLSX (colonnes A à BJ)</button>
+    </div>
+    <div class="progress" id="progress2"><div id="progress-bar2"></div></div>
+    <div class="status" id="status2"></div>
+  </div>
+
   <div id="results"></div>
+
+  <div class="panel">
+    <h2>Suite du chantier</h2>
+    <ul class="roadmap">
+      <li class="done">✓ Étape 1 — Adresses (ICAR) + numéro cadastral (CADMAP)</li>
+      <li class="done">✓ Étape 2 — Plan de secteur : zones d'affectation + périmètres de protection (G à AM)</li>
+      <li class="done">✓ Étape 3 — Captages : zones de surveillance/prévention (BB à BF)</li>
+      <li class="done">✓ Étape 4 — Assainissement (PASH) : régime collectif/autonome/transitoire (BG à BJ) — à confirmer (CORS + codes PASHCODE non intégralement vérifiés)</li>
+      <li class="done">✓ Étape 5 — SDC / SOL (AO à AQ) : Schéma de Développement Communal (+ lien LIENDOC) et Schéma d'Orientation Local, interrogés via AMENAGEMENT_TERRITOIRE/SDC et /SOL (ArcGIS)</li>
+      <li class="done">✓ Étape 6 — GRU / GCU (AR à AU) : zones protégées en matière d'urbanisme, règlement sur les bâtisses en site rural, qualité acoustique des constructions (GRU, couches 3-4-5) et Guide Communal d'Urbanisme + anciens RCB/RCU (GCU, couches 0-1-2)</li>
+      <li>Étape 7 — Aléa d'inondation, ERRUISOL, LIDAXES (AV à BA) : couche vecteur exacte pas encore identifiée avec certitude</li>
+      <li>Étape 8 — Patrimoine (BK à BP), SEVESO/PRU/SAR/PUL (BQ à BY)</li>
+      <li>Étape 9 — Terrils, sites à réaménager, ZIP, Natura 2000, forêt (BZ à CK)</li>
+      <li>Étape 10 — Préemption, BDES, EDRLR, liens réglementaires (CL à CX)</li>
+    </ul>
+  </div>
 
 </main>
 
 <footer>
-  Sources : <a href="https://geoservices.wallonie.be/arcgis/rest/services/DONNEES_BASE/ICAR_ADR_PT/MapServer/1" target="_blank">ICAR — Points d'adresses</a>
-  et <a href="https://geoservices.wallonie.be/arcgis/rest/services/PLAN_REGLEMENT/CADMAP_PARCELLES/MapServer/0" target="_blank">Plan parcellaire cadastral (CADMAP)</a>,
-  Service public de Wallonie / AGDP. Le numéro cadastral (CAPAKEY) est déterminé par intersection géométrique
-  entre le point d'adresse ICAR et la parcelle CADMAP — à vérifier visuellement sur
-  <a href="https://geoportail.wallonie.be/walonmap" target="_blank">WalOnMap</a> en cas de doute
-  (point d'adresse mal recalé, parcelle multiple, etc.). Lorsque plusieurs numéros de rue pointent
-  vers la même parcelle cadastrale, ils sont regroupés sur une seule ligne (numéros séparés par une
-  virgule). Les lignes dont le N° affiche <code>/</code>
-  correspondent soit à un point d'adresse ICAR sans numéro renseigné, soit à une parcelle cadastrale
-  sans point d'adresse ICAR propre (aucun numéro trouvé, même sous un autre nom de rue enregistré
-  dans ICAR) mais dont la géométrie a été vérifiée comme bordant effectivement
-  (≤ 20 m) l'axe de voirie PICC de la rue recherchée — le nom de rue provient alors de cette couche
-  voirie, seul le code postal est estimé depuis l'adresse connue la plus proche ; en cas de doute,
-  vérifiez sur WalOnMap. Cette vérification des parcelles "orphelines" est effectuée rue par rue
-  (y compris pour une recherche sur toute une commune) ; une rue individuelle est ignorée si elle
-  comporte trop de parcelles ou qu'aucun axe de voirie correspondant n'est trouvé, et l'étape
-  entière est ignorée si le nombre de rues distinctes est trop élevé, afin d'éviter un blocage du
-  navigateur.
+  Sources : <a href="https://geoservices.wallonie.be/arcgis/rest/services/DONNEES_BASE/ICAR_ADR_PT/MapServer/1" target="_blank">ICAR — Points d'adresses</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/PLAN_REGLEMENT/CADMAP_PARCELLES/MapServer/0" target="_blank">Plan parcellaire cadastral (CADMAP)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PDS/MapServer" target="_blank">Plan de secteur en vigueur (PDS)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/SDC/MapServer" target="_blank">Schéma de Développement Communal (SDC)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/SOL/MapServer" target="_blank">Schéma d'Orientation Local (SOL)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/GRU/MapServer" target="_blank">Guide Régional d'Urbanisme (GRU)</a> et
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/GCU/MapServer" target="_blank">Guide Communal d'Urbanisme (GCU)</a>,
+  Service public de Wallonie / AGDP. À vérifier visuellement sur
+  <a href="https://geoportail.wallonie.be/walonmap" target="_blank">WalOnMap</a> en cas de doute.
 </footer>
 
 <script>
 const ICAR_URL = "https://geoservices.wallonie.be/arcgis/rest/services/DONNEES_BASE/ICAR_ADR_PT/MapServer/1/query";
 const CAD_URL  = "https://geoservices.wallonie.be/arcgis/rest/services/PLAN_REGLEMENT/CADMAP_PARCELLES/MapServer/0/query";
 const VOIRIE_URL = "https://geoservices.wallonie.be/arcgis/rest/services/TOPOGRAPHIE/PICC_VDIFF/MapServer/21/query";
+const PDS_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PDS/MapServer";
 const PAYS = "Belgique";
 
-// Seuils de garde-fou pour l'étape de vérification "parcelles orphelines bordant la rue".
-// Cette étape est maintenant effectuée RUE PAR RUE (regroupement des adresses par nom de rue
-// exact trouvé) : chaque rue a sa propre petite enveloppe géographique, ce qui rend le calcul
-// géométrique (parcelles x axes de voirie) rapide et borné, même pour une commune entière.
-const MAX_STREETS_FOR_BORDER_CHECK = 400;   // nb de rues distinctes au-delà duquel on saute l'étape entière
-const MAX_PARCELLES_PER_STREET = 800;       // nb de parcelles dans l'enveloppe d'UNE rue au-delà duquel on saute cette rue
-const STREET_CONCURRENCY = 4;               // nb de rues traitées en parallèle
-const BORDER_CHECK_CHUNK = 40;              // nb de parcelles traitées (au sein d'une rue) avant de rendre la main au navigateur
+const MAX_STREETS_FOR_BORDER_CHECK = 400;
+const MAX_PARCELLES_PER_STREET = 800;
+const STREET_CONCURRENCY = 4;
+const BORDER_CHECK_CHUNK = 40;
+
+// --- Bloc "Plan de secteur" ---
+// Correspondance code AFFECT (couche 22) -> colonne du modèle Excel (G à AF)
+const AFFECT_TO_COL = {
+  H01:"G", H02:"H", H03:"I",
+  P01:"J", P02:"J", P03:"J",
+  L01:"K", L11:"K", L12:"K", L13:"K",
+  A01:"L", A02:"M", A11:"N", A12:"N", A13:"O",
+  X01:"AE",
+  XR1:"P", XR2:"Q", XR3:"R", XR4:"S",
+  D01:"T", ZEC:"U", ZER:"V", D02:"W",
+  R01:"X", R02:"Y", R03:"Z", R04:"AA", R05:"AB",
+  P12:"AF", V01:"AF", V02:"AF"
+};
+const ZONE_COLS = ["G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z","AA","AB","AC","AD","AE","AF"];
+// AN (aire d'habitat) vaut systématiquement "/" dans le fichier modèle sur toutes les lignes,
+// y compris pour des zones très diverses : ce n'est pas une donnée déduite d'une couche PDS mais
+// une colonne laissée telle quelle par la méthode d'origine.
+const ALWAYS_SLASH_COLS = ["AN"];
+// AC (zone de recul) et AD (zone d'accès et de stationnement) sont de VRAIES prescriptions à
+// interroger (couche 4 "Mesures d'aménagement" et couche 5 "Prescriptions supplémentaires" du
+// service PDS) : ce sont des zones ponctuelles/localisées, donc la réponse est très souvent "N"
+// (pas de prescription à cet endroit précis), mais la couche est bien interrogée à chaque fois —
+// voir RECUL_STATIONNEMENT_LAYERS plus bas. Le nom exact du champ texte n'étant pas garanti
+// identique sur les deux couches, la recherche du mot-clé se fait sur TOUS les champs texte
+// renvoyés, pour ne jamais dépendre d'un nom de champ précis et éviter une erreur silencieuse.
+const RECUL_STATIONNEMENT_LAYERS = [4, 5];
+// Couches "périmètres de protection" (15 à 21) -> colonnes AG à AM, dans cet ordre
+const PERIMETRE_LAYERS = [
+  {id:15, col:"AG", label:"Points de vue remarquable"},
+  {id:16, col:"AH", label:"Périmètres de points de vue remarquable"},
+  {id:17, col:"AI", label:"Intérêt paysager"},
+  {id:18, col:"AJ", label:"Intérêt culturel, historique ou esthétique"},
+  {id:19, col:"AK", label:"Liaisons écologiques"},
+  {id:20, col:"AL", label:"Réservation d'infrastructure principale"},
+  {id:21, col:"AM", label:"Extension de zone d'extraction"}
+];
+const PDS_COLS = ZONE_COLS.concat(PERIMETRE_LAYERS.map(l=>l.col)).concat(["AN"]);
+
+// --- Bloc "Schéma de Développement Communal (SDC) & Schéma d'Orientation Local (SOL)" ---
+// Service distinct du PDS mais sur le même domaine geoservices.wallonie.be (pas de souci CORS
+// attendu). Couche 0 = "Schémas de Développement Communaux" (regroupe les SDC adoptés ET les
+// "Projet de SDC" — champ NATURE = "SDC" ou "PROJET_SDC") ; couche 1 = "Anciennement Schémas de
+// Structure Communaux" (SSC), qui restent valables tant qu'aucun SDC ne les remplace (le service
+// SDC est décrit par la Région comme un "miroir cartographique" des anciens SSC). Les deux couches
+// sont donc interrogées et fusionnées pour la colonne AO. Le champ LIENDOC (présent sur les deux
+// couches) fournit directement le lien du document pour la colonne AP, en priorité celui de la
+// couche 0 (SDC en vigueur) si les deux couches matchent au même endroit.
+const SDC_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/SDC/MapServer";
+const SDC_LAYERS = [0, 1];
+// Couche unique qui regroupe déjà, côté Région, les SOL proprement dits ainsi que les anciens PCA,
+// RUE, SCD et PLD (tous repris dans la définition CoDT du Schéma d'Orientation Local).
+const SOL_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/SOL/MapServer";
+const SOL_LAYER = 0;
+const SDC_SOL_COLS = ["AO","AP","AQ"];
+// AP est une colonne "lien" (texte), pas une colonne O/N : par défaut elle vaut "/", comme dans le
+// modèle Excel, et n'est renseignée que si AO = "O" et qu'un LIENDOC est disponible.
+const LINK_COLS = ["AP"];
+
+// --- Bloc "Guide Régional d'Urbanisme (GRU) & Guide Communal d'Urbanisme (GCU)" ---
+// Service GRU (5 couches à vocation cartographique parmi les 6 exposées) : la couche 0 (GRU
+// générique), la couche 1 (accès PMR) et la couche 2 (enseignes et publicité) n'ont pas de
+// délimitation spatiale au sens strict d'après la fiche de métadonnées de la donnée et ne sont
+// donc pas utilisées ici. Les couches réellement exploitables pour une recherche géographique
+// point-dans-polygone sont :
+//   - couche 5 : GRU - Zones Protégées en matière d'Urbanisme (ZPU)              -> AR
+//   - couche 4 : GRU - Règlement Général sur les Bâtisses en Site Rural (RGBSR)  -> AS
+//   - couche 3 : GRU - Qualité acoustique des constructions                     -> AT
+// Les trois couches partagent un champ LIENDOC (lien vers le dossier / arrêté), conservé pour un
+// usage ultérieur (colonnes CU à CW du modèle complet, étape 10 du chantier).
+const GRU_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/GRU/MapServer";
+const GRU_ZPU_LAYER = 5;
+const GRU_RGBSR_LAYER = 4;
+const GRU_ACOUS_LAYER = 3;
+// Service GCU : couche 0 = Guides Communaux d'Urbanisme (nouveaux, CoDT), couche 1 = anciens
+// Règlements Communaux de Bâtisse (RCB), couche 2 = anciens Règlements Communaux d'Urbanisme
+// (RCU). Le guide de collecte précise "Guide communal d'urbanisme (+lien vers site de la
+// commune)" pour une seule colonne (AU) : les trois couches sont donc fusionnées.
+const GCU_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/GCU/MapServer";
+const GCU_LAYERS = [0, 1, 2];
+const GRU_GCU_COLS = ["AR","AS","AT","AU"];
+
+const URBANISME_COLS = SDC_SOL_COLS.concat(GRU_GCU_COLS);
+
+// --- Bloc "Captages" (EAU/PROTECT_CAPT, même domaine geoservices.wallonie.be) ---
+const CAPT_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/EAU/PROTECT_CAPT/MapServer";
+const CAPT_LAYERS = [
+  {id:0, col:"BB", label:"Zones de surveillance arrêtées"},
+  {id:2, col:"BC", label:"Zone de prévention rapprochée IIa (arrêtée)"},
+  {id:3, col:"BD", label:"Zones de prévention éloignée IIb (arrêtée)"}
+];
+const CAPT_FORFAIT_LAYER = {id:4, base:CAPT_BASE}; // TYPE_CODE: IIa -> BF (forfaitaire rapprochée), IIb -> BE (forfaitaire éloignée)
+const CAPT_COLS = ["BB","BC","BD","BE","BF"];
+
+// --- Bloc "Assainissement" (PASH — SPGE, domaine DIFFÉRENT : sig.spge.be) ---
+// ATTENTION : service sur un autre domaine que geoservices.wallonie.be — le comportement CORS
+// depuis le navigateur n'a pas pu être vérifié en amont. Si la requête échoue avec une erreur
+// réseau/CORS, ce bloc doit être ignoré (les autres restent valides).
+const PASH_URL = "https://sig.spge.be/server/rest/services/WebPash/WebPASH/MapServer/6/query";
+const ASSAIN_COLS = ["BG","BH","BI","BJ"];
+// Interprétation du champ PASHCODE (préfixe) — le domaine complet des valeurs n'a pas pu être
+// entièrement récupéré (liste tronquée par le service à "Ia, ...4 more..."), donc ce mapping se
+// base sur la structure connue du Code de l'Eau plutôt que sur le domaine exact : à vérifier.
+function pashCodeToCol(code){
+  if(!code) return null;
+  const c = String(code).toUpperCase();
+  if(c === "IA") return "BG";       // Collectif (RAC)
+  if(c === "IB") return "BH";       // Collectif hors zone urbanisable
+  if(c.startsWith("II")) return "BI"; // Autonome
+  if(c.startsWith("III")) return "BJ"; // Transitoire
+  return null;
+}
+
+// En-têtes complets du modèle (A à AM) pour l'export
+const HEADERS_A_TO_AM = ["Pays","Code Postal","Communes","Rue","Numéro","Numéro cadastral",
+  "zone d'habitat","zone d'habitat à caractère rural","Zone d'habitat vert",
+  "Zone de services publics et équipements communautaires","zone de loisirs",
+  "Zone d'activité économique mixte","Zone d'activité économique industrielle",
+  "Zone d'activité économique spécifique agro-économique OU grande distribution",
+  "Zone d'activité économique spécifique Risque majeur",
+  "zones de dépendances Extraction à destination agricole",
+  "zones de dépendances Extraction à destination forestière",
+  "zones de dépendances Extraction à destination espaces verts",
+  "zones de dépendances Extraction à destination zone naturelle",
+  "Zone d'aménagement communautaire concerté","Zone d'enjeu communal","Zone d'enjeu régional",
+  "Zone d'aménagement communautaire concerté à caractère économique",
+  "zone agricole","Zone forestière","Zone d'espaces verts","Zone naturelle","Zone de parc",
+  "zone de recul","zone d'accès et de stationnement","Zone d'extraction","Zone non affectée",
+  "Points de vue remarquable","Périmètres de points de vue remarquable","Intérêt paysager",
+  "Intérêt culturel, historique ou esthétique","Liaisons écologiques",
+  "Réservation d'infrastructure principale","Extension de zone d'extraction","aire d'habitat",
+  "Schéma de développement communal","Lien Schéma de développement communal",
+  "Schéma de développement d'oritentation locale",
+  "Guide régional d'urbanisme Règlement général sur les bâtisses applicable aux zones protégées de certaines communes en matière d’urbanisme (ZPU)",
+  "Guide régional d'urbanisme Règlement général sur les bâtisses en site rural",
+  "Guide régional d'urbanisme Règlement d’urbanisme sur la qualité acoustique de constructions dans les zones B, C et D des plans de développement à long terme des aéroports de Liège-Bierset et de Charleroi-Bruxelles Sud",
+  "Guide communal d'urbanisme (+lien vers site de la commune)",
+  "Zone de surveillance","Zone de prévention rapprochée IIa","Zone de prévention éloignée IIb",
+  "Zones de prévention forfaitaires éloignée Ilb","Zones de prévention forfaitaires II",
+  "Collectif","Collectif hors zone urbanisable","Autonome","Transitoire"];
+
+// Toutes les colonnes "enrichissement" (au-delà de A-F), dans l'ordre du modèle
+const EXTRA_COLS = PDS_COLS.concat(URBANISME_COLS).concat(CAPT_COLS).concat(ASSAIN_COLS);
+
+// Mapping lettre de colonne -> vrai nom de colonne (tel qu'écrit dans le modèle Excel)
+const PDS_COL_NAMES = {};
+EXTRA_COLS.forEach((col, i) => { PDS_COL_NAMES[col] = HEADERS_A_TO_AM[6 + i]; });
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
+const status2El = $("status2");
 const progressWrap = $("progress");
 const progressBar = $("progress-bar");
+const progressWrap2 = $("progress2");
+const progressBar2 = $("progress-bar2");
 let lastRows = [];
+let pdsComplete = false;
 
-function setStatus(msg, level){
-  // level: undefined (normal), "err", "warn"
-  statusEl.textContent = msg || "";
-  statusEl.className = "status" + (level ? " " + level : "");
+function setStatus(el, msg, level){
+  el.textContent = msg || "";
+  el.className = "status" + (level ? " " + level : "");
 }
-
-function esc(v){
-  return (v === null || v === undefined || v === "") ? "" : String(v);
-}
-
-function sqlEscape(v){
-  return v.replace(/'/g, "''");
-}
-
-// Laisse le navigateur respirer (repeindre l'UI) entre deux paquets de travail lourd
-function yieldToUI(){
-  return new Promise(resolve => setTimeout(resolve, 0));
-}
+function esc(v){ return (v === null || v === undefined || v === "") ? "" : String(v); }
+function sqlEscape(v){ return v.replace(/'/g, "''"); }
+function yieldToUI(){ return new Promise(resolve => setTimeout(resolve, 0)); }
 
 async function fetchJson(url, params){
   const usp = new URLSearchParams(params);
@@ -205,106 +390,77 @@ async function fetchJson(url, params){
   return data;
 }
 
-// Récupère tous les points d'adresse ICAR correspondant aux filtres (pagination incluse)
 async function fetchAdresses(rue, commune, cp){
   const clauses = [];
   if(rue)     clauses.push(`UPPER(RUE_NM) LIKE UPPER('%${sqlEscape(rue)}%')`);
   if(commune) clauses.push(`UPPER(COM_NM) LIKE UPPER('%${sqlEscape(commune)}%')`);
   if(cp)      clauses.push(`CODE_POSTAL = '${sqlEscape(cp)}'`);
   const where = clauses.length ? clauses.join(" AND ") : "1=1";
-
-  let offset = 0;
-  const pageSize = 1000;
-  let all = [];
+  let offset = 0; const pageSize = 1000; let all = [];
   while(true){
     const data = await fetchJson(ICAR_URL, {
-      where,
-      outFields: "ADR_NUMERO,RUE_NM,CODE_POSTAL,COM_NM,COM_INS",
-      returnGeometry: "true",
-      outSR: "31370",
-      resultRecordCount: pageSize,
-      resultOffset: offset,
-      orderByFields: "COM_NM,RUE_NM,ADR_NUMERO",
-      f: "json"
+      where, outFields: "ADR_NUMERO,RUE_NM,CODE_POSTAL,COM_NM,COM_INS",
+      returnGeometry: "true", outSR: "31370",
+      resultRecordCount: pageSize, resultOffset: offset,
+      orderByFields: "COM_NM,RUE_NM,ADR_NUMERO", f: "json"
     });
     const feats = data.features || [];
     all = all.concat(feats);
     if(feats.length < pageSize) break;
     offset += pageSize;
-    if(offset > 20000) break; // garde-fou
+    if(offset > 20000) break;
   }
   return all;
 }
 
-// Trouve la parcelle cadastrale contenant un point (x,y en Lambert72 EPSG:31370)
 async function findParcelle(x, y){
   const geometry = JSON.stringify({ x, y, spatialReference: { wkid: 31370 } });
   const data = await fetchJson(CAD_URL, {
-    geometry,
-    geometryType: "esriGeometryPoint",
-    inSR: "31370",
+    geometry, geometryType: "esriGeometryPoint", inSR: "31370",
     spatialRel: "esriSpatialRelIntersects",
     outFields: "CAPAKEY,NOM_COMMUNE,DIV_NOM,SECT,RADICAL,BIS,EXPOSANT,PUISSANCE",
-    returnGeometry: "false",
-    f: "json"
+    returnGeometry: "false", f: "json"
   });
   const feats = data.features || [];
   return feats.length ? feats[0].attributes : null;
 }
 
-// Récupère toutes les parcelles cadastrales (avec géométrie) intersectant une enveloppe (bbox)
 async function fetchParcellesInEnvelope(xmin, ymin, xmax, ymax){
   const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
-  let offset = 0;
-  const pageSize = 1000;
-  let all = [];
+  let offset = 0; const pageSize = 1000; let all = [];
   while(true){
     const data = await fetchJson(CAD_URL, {
-      geometry,
-      geometryType: "esriGeometryEnvelope",
-      inSR: "31370",
+      geometry, geometryType: "esriGeometryEnvelope", inSR: "31370",
       spatialRel: "esriSpatialRelIntersects",
       outFields: "CAPAKEY,NOM_COMMUNE,DIV_NOM,SECT,RADICAL,BIS,EXPOSANT,PUISSANCE",
-      returnGeometry: "true",
-      outSR: "31370",
-      resultRecordCount: pageSize,
-      resultOffset: offset,
-      f: "json"
+      returnGeometry: "true", outSR: "31370",
+      resultRecordCount: pageSize, resultOffset: offset, f: "json"
     });
     const feats = data.features || [];
     all = all.concat(feats);
     if(feats.length < pageSize) break;
     offset += pageSize;
-    if(offset > 20000) break; // garde-fou
+    if(offset > 20000) break;
   }
   return all;
 }
 
-// Récupère TOUS les points d'adresse ICAR présents dans une enveloppe, sans filtre de rue.
 async function fetchAdressesInEnvelope(xmin, ymin, xmax, ymax){
   const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
-  let offset = 0;
-  const pageSize = 1000;
-  let all = [];
+  let offset = 0; const pageSize = 1000; let all = [];
   while(true){
     const data = await fetchJson(ICAR_URL, {
-      where: "1=1",
-      geometry,
-      geometryType: "esriGeometryEnvelope",
-      inSR: "31370",
+      where: "1=1", geometry, geometryType: "esriGeometryEnvelope", inSR: "31370",
       spatialRel: "esriSpatialRelIntersects",
       outFields: "ADR_NUMERO,RUE_NM,CODE_POSTAL,COM_NM",
-      returnGeometry: "true",
-      outSR: "31370",
-      resultRecordCount: pageSize,
-      resultOffset: offset,
-      f: "json"
+      returnGeometry: "true", outSR: "31370",
+      resultRecordCount: pageSize, resultOffset: offset, f: "json"
     });
     const feats = data.features || [];
     all = all.concat(feats);
     if(feats.length < pageSize) break;
     offset += pageSize;
-    if(offset > 20000) break; // garde-fou
+    if(offset > 20000) break;
   }
   return all;
 }
@@ -338,28 +494,20 @@ async function fetchVoirieAxe(rue, commune, xmin, ymin, xmax, ymax){
   }
   const where = clauses.length ? clauses.join(" AND ") : "1=1";
   const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
-  let offset = 0;
-  const pageSize = 1000;
-  let all = [];
+  let offset = 0; const pageSize = 1000; let all = [];
   while(true){
     const data = await fetchJson(VOIRIE_URL, {
-      where,
-      geometry,
-      geometryType: "esriGeometryEnvelope",
-      inSR: "31370",
+      where, geometry, geometryType: "esriGeometryEnvelope", inSR: "31370",
       spatialRel: "esriSpatialRelIntersects",
       outFields: "RUE_NOM1,COMMU_NOM1,RUE_NOM2,COMMU_NOM2",
-      returnGeometry: "true",
-      outSR: "31370",
-      resultRecordCount: pageSize,
-      resultOffset: offset,
-      f: "json"
+      returnGeometry: "true", outSR: "31370",
+      resultRecordCount: pageSize, resultOffset: offset, f: "json"
     });
     const feats = data.features || [];
     all = all.concat(feats);
     if(feats.length < pageSize) break;
     offset += pageSize;
-    if(offset > 5000) break; // garde-fou
+    if(offset > 5000) break;
   }
   return all;
 }
@@ -372,7 +520,6 @@ function distPointToSegment(px, py, x1, y1, x2, y2){
   const cx = x1 + t*dx, cy = y1 + t*dy;
   return Math.hypot(px - cx, py - cy);
 }
-
 function segmentsIntersect(ax1,ay1,ax2,ay2, bx1,by1,bx2,by2){
   function cross(ox,oy,ax,ay,bx,by){ return (ax-ox)*(by-oy) - (ay-oy)*(bx-ox); }
   const d1 = cross(bx1,by1,bx2,by2,ax1,ay1);
@@ -381,7 +528,6 @@ function segmentsIntersect(ax1,ay1,ax2,ay2, bx1,by1,bx2,by2){
   const d4 = cross(ax1,ay1,ax2,ay2,bx2,by2);
   return ((d1>0&&d2<0)||(d1<0&&d2>0)) && ((d3>0&&d4<0)||(d3<0&&d4>0));
 }
-
 function distSegToSeg(ax1,ay1,ax2,ay2, bx1,by1,bx2,by2){
   if(segmentsIntersect(ax1,ay1,ax2,ay2, bx1,by1,bx2,by2)) return 0;
   return Math.min(
@@ -391,7 +537,6 @@ function distSegToSeg(ax1,ay1,ax2,ay2, bx1,by1,bx2,by2){
     distPointToSegment(bx2,by2, ax1,ay1,ax2,ay2)
   );
 }
-
 function distRingsToPaths(rings, paths){
   let min = Infinity;
   for(const ring of rings){
@@ -410,7 +555,6 @@ function distRingsToPaths(rings, paths){
   }
   return min;
 }
-
 function pointInRings(x, y, rings){
   let inside = false;
   for(const ring of rings){
@@ -424,14 +568,12 @@ function pointInRings(x, y, rings){
   }
   return inside;
 }
-
 function ringCentroid(rings){
   const ring = rings[0];
   let sx = 0, sy = 0;
   for(const [x, y] of ring){ sx += x; sy += y; }
   return { x: sx / ring.length, y: sy / ring.length };
 }
-
 function formatParcelle(a){
   if(!a) return null;
   let n = (a.RADICAL || "").replace(/^0+/, "") || a.RADICAL || "";
@@ -441,15 +583,10 @@ function formatParcelle(a){
   return { display: n, capakey: a.CAPAKEY };
 }
 
-// Traite UNE rue (un groupe d'adresses partageant la même commune + le même nom de rue exact) :
-// cherche les parcelles cadastrales de sa petite enveloppe qui n'ont pas de point d'adresse ICAR
-// propre mais bordent effectivement l'axe de voirie de cette rue. Portée volontairement réduite
-// à une seule rue, donc bbox et nb de parcelles/axes restent petits et rapides à traiter.
 async function processStreetGroup(group, matchedCapakeys, onProgress){
-  const { commune, rue, rows } = group; // rows = adresses (avec coordonnées) de cette rue précise
+  const { commune, rue, rows } = group;
   const MARGIN = 30;
   const ROAD_MAX = 20;
-
   const xs = rows.map(r => r._x), ys = rows.map(r => r._y);
   const xmin = Math.min(...xs) - MARGIN, xmax = Math.max(...xs) + MARGIN;
   const ymin = Math.min(...ys) - MARGIN, ymax = Math.max(...ys) + MARGIN;
@@ -478,7 +615,6 @@ async function processStreetGroup(group, matchedCapakeys, onProgress){
   for(let idx = 0; idx < candidates.length; idx++){
     const p = candidates[idx];
     const a = p.attributes;
-
     let bestAxis = null, bestAxisDist = Infinity;
     for(const ax of axes){
       if(!ax.geometry || !ax.geometry.paths) continue;
@@ -488,6 +624,7 @@ async function processStreetGroup(group, matchedCapakeys, onProgress){
 
     if(bestAxis && bestAxisDist <= ROAD_MAX){
       const fmt = formatParcelle(a);
+      const c = ringCentroid(p.geometry.rings);
       const innerAddrs = envelopeAddrs.filter(af => {
         const g = af.geometry;
         return g && typeof g.x === "number" && typeof g.y === "number" &&
@@ -506,7 +643,8 @@ async function processStreetGroup(group, matchedCapakeys, onProgress){
           cp: first.CODE_POSTAL || "",
           numero: sortNumeroList(numsSet).join(", "),
           capakey: fmt ? fmt.capakey : a.CAPAKEY,
-          parcelleDisplay: fmt ? fmt.display : ""
+          parcelleDisplay: fmt ? fmt.display : "",
+          _x: c.x, _y: c.y
         });
       } else {
         const attrs = bestAxis.attributes;
@@ -517,7 +655,6 @@ async function processStreetGroup(group, matchedCapakeys, onProgress){
         if(n2Match && !n1Match){ rueNom = attrs.RUE_NOM2; communeNom = attrs.COMMU_NOM2; }
         if(!rueNom){ rueNom = attrs.RUE_NOM2 || attrs.RUE_NOM1; communeNom = attrs.COMMU_NOM2 || attrs.COMMU_NOM1; }
 
-        const c = ringCentroid(p.geometry.rings);
         let bestAddr = null, bestAddrDist = Infinity;
         for(const r of rows){
           const d = Math.hypot(r._x - c.x, r._y - c.y);
@@ -530,7 +667,8 @@ async function processStreetGroup(group, matchedCapakeys, onProgress){
           cp: bestAddr ? bestAddr.cp : "",
           numero: "/",
           capakey: fmt ? fmt.capakey : a.CAPAKEY,
-          parcelleDisplay: fmt ? fmt.display : ""
+          parcelleDisplay: fmt ? fmt.display : "",
+          _x: c.x, _y: c.y
         });
       }
     }
@@ -540,18 +678,17 @@ async function processStreetGroup(group, matchedCapakeys, onProgress){
       await yieldToUI();
     }
   }
-
   return { orphanRows, skipped: false };
 }
 
-async function mapLimit(items, limit, worker){
+async function mapLimit(items, limit, worker, onTick){
   const results = new Array(items.length);
   let i = 0;
   async function run(){
     while(i < items.length){
       const idx = i++;
       results[idx] = await worker(items[idx], idx);
-      progressBar.style.width = Math.round((i / items.length) * 100) + "%";
+      if(onTick) onTick(i, items.length);
     }
   }
   await Promise.all(Array.from({length: Math.min(limit, items.length)}, run));
@@ -608,14 +745,24 @@ function numSort(a, b){
 
 function render(rows){
   lastRows = rows;
+  pdsComplete = false;
   const container = $("results");
   container.innerHTML = "";
   if(!rows.length){
     container.innerHTML = "<div class='panel'>Aucun résultat pour ces critères.</div>";
-    $("btn-csv").disabled = true;
+    $("panel-step2").style.display = "none";
     return;
   }
+  $("panel-step2").style.display = "block";
+  $("btn-xlsx").disabled = true;
+  setStatus(status2El, "", null);
 
+  renderTable(rows);
+}
+
+function renderTable(rows){
+  const container = $("results");
+  container.innerHTML = "";
   const sorted = [...rows].sort(numSort);
   const communeCount = new Set(sorted.map(r => r.commune)).size;
 
@@ -627,11 +774,14 @@ function render(rows){
   summary.textContent = `${sorted.length} ligne(s) — ${communeCount} commune(s)`;
   panel.appendChild(summary);
 
+  const wrap = document.createElement("div");
+  wrap.className = "tablewrap";
   const table = document.createElement("table");
+  const extraCols = pdsComplete ? EXTRA_COLS : [];
   table.innerHTML = `
     <thead><tr>
-      <th>Pays</th><th>Code postal</th><th>Commune</th><th>Rue</th>
-      <th>N°</th><th>Parcelle</th>
+      <th>Pays</th><th>CP</th><th>Commune</th><th>Rue</th>
+      <th>N°</th><th>Parcelle</th>${extraCols.map(c=>`<th title="${esc(c)}">${esc(PDS_COL_NAMES[c])}</th>`).join("")}
     </tr></thead>
     <tbody></tbody>`;
   const tbody = table.querySelector("tbody");
@@ -650,19 +800,30 @@ function render(rows){
       ? `<span class="capakey">${esc(r.parcelleDisplay)}</span>`
       : `<span class="missing">non trouvé</span>`;
 
+    let extraCells = "";
+    if(pdsComplete){
+      extraCells = extraCols.map(c=>{
+        const v = r.pds ? r.pds[c] : undefined;
+        const isLink = LINK_COLS.includes(c);
+        const cls = isLink ? "n" : (v === "O" ? "o" : (v === "?" ? "qm" : "n"));
+        const shown = v || (isLink ? "/" : "N");
+        return `<td class="${cls}">${esc(shown)}</td>`;
+      }).join("");
+    }
+
     tr.innerHTML = `
       <td class="pays">${esc(PAYS)}</td>
       <td>${esc(r.cp)}</td>
       <td>${esc(r.commune)}</td>
       <td>${esc(r.rue)}</td>
       <td class="num${r.numero === '/' ? ' orphan' : ''}">${esc(r.numero)}</td>
-      <td>${parcelleCell}</td>`;
+      <td>${parcelleCell}</td>${extraCells}`;
     tbody.appendChild(tr);
   });
 
-  panel.appendChild(table);
+  wrap.appendChild(table);
+  panel.appendChild(wrap);
   container.appendChild(panel);
-  $("btn-csv").disabled = false;
 }
 
 async function runSearch(){
@@ -671,30 +832,30 @@ async function runSearch(){
   const cp = $("f-cp").value.trim();
 
   if(!rue && !commune && !cp){
-    setStatus("Indiquez au moins une rue, une commune ou un code postal.", "err");
+    setStatus(statusEl, "Indiquez au moins une rue, une commune ou un code postal.", "err");
     return;
   }
 
   $("btn-search").disabled = true;
-  $("btn-csv").disabled = true;
   $("results").innerHTML = "";
+  $("panel-step2").style.display = "none";
   progressWrap.style.display = "block";
   progressBar.style.width = "0%";
 
   try{
-    setStatus("Recherche des points d'adresse (ICAR)…");
+    setStatus(statusEl, "Recherche des points d'adresse (ICAR)…");
     const feats = await fetchAdresses(rue, commune, cp);
 
     if(!feats.length){
-      setStatus("Aucune adresse trouvée dans ICAR pour ces critères.", "err");
+      setStatus(statusEl, "Aucune adresse trouvée dans ICAR pour ces critères.", "err");
       progressWrap.style.display = "none";
       render([]);
       return;
     }
     if(feats.length > 800){
-      setStatus(`${feats.length} adresses trouvées — la recherche du numéro cadastral pour chacune peut prendre plusieurs minutes. Affinez la recherche (rue précise) si possible.`, "warn");
+      setStatus(statusEl, `${feats.length} adresses trouvées — la recherche du numéro cadastral pour chacune peut prendre plusieurs minutes. Affinez la recherche (rue précise) si possible.`, "warn");
     } else {
-      setStatus(`${feats.length} adresse(s) trouvée(s). Recherche des parcelles cadastrales…`);
+      setStatus(statusEl, `${feats.length} adresse(s) trouvée(s). Recherche des parcelles cadastrales…`);
     }
 
     const matchedCapakeys = new Set();
@@ -720,24 +881,16 @@ async function runSearch(){
         commune: a.COM_NM || "(commune inconnue)",
         rue: a.RUE_NM || "(rue inconnue)",
         cp: a.CODE_POSTAL || "",
-        numero,
-        capakey, parcelleDisplay,
+        numero, capakey, parcelleDisplay,
         _x: g && g.x, _y: g && g.y
       };
-    });
+    }, (done,total)=>{ progressBar.style.width = Math.round((done/total)*100) + "%"; });
 
-    // --- Étape : parcelles sans point d'adresse mais bordant une rue recherchée ---
-    // Traitée RUE PAR RUE : on regroupe les adresses par (commune, nom de rue exact), puis on
-    // lance la vérification géométrique sur l'enveloppe (réduite) de chaque rue séparément. Ça
-    // marche aussi bien pour "toute la commune" (des dizaines/centaines de petits groupes) que
-    // pour une rue précise (un seul groupe) — et ça reste rapide car chaque enveloppe est petite.
     let orphanRows = [];
     let skippedStreets = 0;
     const withCoords = addressRows.filter(r => typeof r._x === "number");
 
-    if(withCoords.length === 0){
-      // rien à faire, pas de coordonnées exploitables
-    } else {
+    if(withCoords.length > 0){
       const groupsMap = new Map();
       for(const r of withCoords){
         const key = r.commune + "||" + r.rue;
@@ -747,16 +900,16 @@ async function runSearch(){
       const groups = Array.from(groupsMap.values());
 
       if(groups.length > MAX_STREETS_FOR_BORDER_CHECK){
-        setStatus(`${addressRows.length} adresse(s) traitée(s). Étape "parcelles bordant la rue" ignorée : trop de rues distinctes (${groups.length} > ${MAX_STREETS_FOR_BORDER_CHECK}) pour rester dans un temps raisonnable. Précisez davantage la rue/commune pour l'activer.`, "warn");
+        setStatus(statusEl, `${addressRows.length} adresse(s) traitée(s). Étape "parcelles bordant la rue" ignorée : trop de rues distinctes (${groups.length} > ${MAX_STREETS_FOR_BORDER_CHECK}).`, "warn");
       } else {
         try{
           let done = 0;
           const perStreetResults = await mapLimit(groups, STREET_CONCURRENCY, async (group) => {
-            setStatus(`Vérification des parcelles bordant la rue… (rue ${done + 1}/${groups.length} : ${group.rue}, ${group.commune})`);
+            setStatus(statusEl, `Vérification des parcelles bordant la rue… (rue ${done + 1}/${groups.length} : ${group.rue}, ${group.commune})`);
             let res;
             try{
               res = await processStreetGroup(group, matchedCapakeys, () => {
-                setStatus(`Vérification des parcelles bordant la rue… (rue ${done + 1}/${groups.length} : ${group.rue}, ${group.commune})`);
+                setStatus(statusEl, `Vérification des parcelles bordant la rue… (rue ${done + 1}/${groups.length} : ${group.rue}, ${group.commune})`);
               });
             }catch(e){
               res = { orphanRows: [], skipped: true, reason: e.message };
@@ -765,51 +918,424 @@ async function runSearch(){
             progressBar.style.width = Math.round((done / groups.length) * 100) + "%";
             return res;
           });
-
           for(const r of perStreetResults){
             if(r.skipped) skippedStreets++;
             else orphanRows = orphanRows.concat(r.orphanRows);
           }
         }catch(e){
-          setStatus("Adresses récupérées, mais échec de la vérification des parcelles voisines : " + e.message, "err");
+          setStatus(statusEl, "Adresses récupérées, mais échec de la vérification des parcelles voisines : " + e.message, "err");
         }
       }
     }
 
     const rows = mergeByParcelle(addressRows.concat(orphanRows));
     progressWrap.style.display = "none";
-    const skipNote = skippedStreets ? ` (${skippedStreets} rue(s) ignorée(s) car trop de parcelles ou pas d'axe de voirie trouvé)` : "";
-    setStatus(`Terminé — ${addressRows.length} adresse(s) (${addressRows.filter(r=>r.capakey).length} avec n° cadastral), + ${orphanRows.length} parcelle(s) sans point d'adresse${skipNote}. ${addressRows.length + orphanRows.length - rows.length} ligne(s) fusionnée(s) par numéro cadastral commun.`);
+    const skipNote = skippedStreets ? ` (${skippedStreets} rue(s) ignorée(s))` : "";
+    setStatus(statusEl, `Terminé — ${addressRows.length} adresse(s) (${addressRows.filter(r=>r.capakey).length} avec n° cadastral), + ${orphanRows.length} parcelle(s) sans point d'adresse${skipNote}. ${addressRows.length + orphanRows.length - rows.length} ligne(s) fusionnée(s).`, "ok");
     render(rows);
+
+    // Enchaîne automatiquement sur le plan de secteur, sans action supplémentaire de l'utilisateur
+    await runPds();
 
   }catch(err){
     progressWrap.style.display = "none";
-    setStatus("Erreur : " + err.message + " — si l'appel est bloqué par le navigateur (CORS), essayez depuis un autre réseau ou via un proxy CORS.", "err");
+    setStatus(statusEl, "Erreur : " + err.message + " — si l'appel est bloqué par le navigateur (CORS), essayez depuis un autre réseau ou via un proxy CORS.", "err");
   }finally{
     $("btn-search").disabled = false;
   }
 }
 
-function exportCsv(){
+// ---------- Étape 2 : Plan de secteur, SDC/SOL, GRU/GCU, captages, assainissement ----------
+
+async function fetchPdsLayerInEnvelope(layerId, xmin, ymin, xmax, ymax, outFields){
+  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
+  let offset = 0; const pageSize = 2000; let all = [];
+  while(true){
+    const data = await fetchJson(PDS_BASE + "/" + layerId + "/query", {
+      geometry, geometryType: "esriGeometryEnvelope", inSR: "31370",
+      spatialRel: "esriSpatialRelIntersects",
+      outFields, returnGeometry: "true", outSR: "31370",
+      resultRecordCount: pageSize, resultOffset: offset, f: "json"
+    });
+    const feats = data.features || [];
+    all = all.concat(feats);
+    if(feats.length < pageSize) break;
+    offset += pageSize;
+    if(offset > 40000) break;
+  }
+  return all;
+}
+
+// Fonction générique réutilisée pour tous les services ArcGIS supplémentaires interrogés par
+// enveloppe (SDC, SOL, GRU, GCU) — même logique de pagination que fetchPdsLayerInEnvelope, mais
+// paramétrée par l'URL de base du service pour éviter de dupliquer le code par couche.
+async function fetchArcgisLayerInEnvelope(base, layerId, xmin, ymin, xmax, ymax, outFields){
+  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
+  let offset = 0; const pageSize = 2000; let all = [];
+  while(true){
+    const data = await fetchJson(base + "/" + layerId + "/query", {
+      geometry, geometryType: "esriGeometryEnvelope", inSR: "31370",
+      spatialRel: "esriSpatialRelIntersects",
+      outFields, returnGeometry: "true", outSR: "31370",
+      resultRecordCount: pageSize, resultOffset: offset, f: "json"
+    });
+    const feats = data.features || [];
+    all = all.concat(feats);
+    if(feats.length < pageSize) break;
+    offset += pageSize;
+    if(offset > 40000) break;
+  }
+  return all;
+}
+
+// Normalise (accents/casse) une valeur pour la recherche de mot-clé, sans dépendre du nom exact
+// du champ : on regarde TOUTES les valeurs texte renvoyées par la couche.
+function normalizeForKeyword(v){
+  return String(v == null ? "" : v)
+    .toUpperCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function featureMatchesKeyword(feature, keywords){
+  const attrs = feature.attributes || {};
+  for(const k in attrs){
+    const v = attrs[k];
+    if(typeof v !== "string") continue;
+    const norm = normalizeForKeyword(v);
+    for(const kw of keywords){
+      if(norm.includes(kw)) return true;
+    }
+  }
+  return false;
+}
+
+async function fetchCaptLayerInEnvelope(layerId, xmin, ymin, xmax, ymax, outFields){
+  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
+  let offset = 0; const pageSize = 2000; let all = [];
+  while(true){
+    const data = await fetchJson(CAPT_BASE + "/" + layerId + "/query", {
+      geometry, geometryType: "esriGeometryEnvelope", inSR: "31370",
+      spatialRel: "esriSpatialRelIntersects",
+      outFields, returnGeometry: "true", outSR: "31370",
+      resultRecordCount: pageSize, resultOffset: offset, f: "json"
+    });
+    const feats = data.features || [];
+    all = all.concat(feats);
+    if(feats.length < pageSize) break;
+    offset += pageSize;
+    if(offset > 40000) break;
+  }
+  return all;
+}
+
+// Domaine potentiellement différent (sig.spge.be) : on isole l'échec (CORS ou autre) sans
+// bloquer le reste de l'enrichissement.
+async function fetchAssainissementInEnvelope(xmin, ymin, xmax, ymax){
+  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
+  let offset = 0; const pageSize = 2000; let all = [];
+  while(true){
+    const data = await fetchJson(PASH_URL, {
+      geometry, geometryType: "esriGeometryEnvelope", inSR: "31370",
+      spatialRel: "esriSpatialRelIntersects",
+      outFields: "PASHCODE", returnGeometry: "true", outSR: "31370",
+      resultRecordCount: pageSize, resultOffset: offset, f: "json"
+    });
+    const feats = data.features || [];
+    all = all.concat(feats);
+    if(feats.length < pageSize) break;
+    offset += pageSize;
+    if(offset > 40000) break;
+  }
+  return all;
+}
+
+function emptyPdsRow(){
+  const o = {};
+  for(const c of EXTRA_COLS){
+    if(ALWAYS_SLASH_COLS.includes(c) || LINK_COLS.includes(c)) o[c] = "/";
+    else o[c] = "N";
+  }
+  return o;
+}
+
+async function runPds(){
+  if(!lastRows.length) return;
+  const withCoords = lastRows.filter(r => typeof r._x === "number" && typeof r._y === "number");
+  if(!withCoords.length){
+    setStatus(status2El, "Aucune ligne avec coordonnées exploitables.", "err");
+    return;
+  }
+
+  $("btn-xlsx").disabled = true;
+  progressWrap2.style.display = "block";
+  progressBar2.style.width = "0%";
+
+  try{
+    const MARGIN = 50;
+    const xs = withCoords.map(r=>r._x), ys = withCoords.map(r=>r._y);
+    const xmin = Math.min(...xs)-MARGIN, xmax = Math.max(...xs)+MARGIN;
+    const ymin = Math.min(...ys)-MARGIN, ymax = Math.max(...ys)+MARGIN;
+
+    setStatus(status2El, "Récupération des zones d'affectation (couche 22)…");
+    const zones = await fetchPdsLayerInEnvelope(22, xmin, ymin, xmax, ymax, "AFFECT");
+    progressBar2.style.width = "10%";
+
+    const perimGeoms = {};
+    let li = 0;
+    for(const layer of PERIMETRE_LAYERS){
+      setStatus(status2El, `Récupération périmètre "${layer.label}" (couche ${layer.id})…`);
+      perimGeoms[layer.id] = await fetchPdsLayerInEnvelope(layer.id, xmin, ymin, xmax, ymax, "OBJECTID");
+      li++;
+      progressBar2.style.width = Math.round(10 + (li/PERIMETRE_LAYERS.length)*25) + "%";
+      await yieldToUI();
+    }
+
+    // Zone de recul (AC) / zone d'accès et de stationnement (AD) : prescriptions ponctuelles.
+    // Champ texte non garanti identique entre les deux couches -> outFields="*" et recherche de
+    // mot-clé sur tous les champs (voir featureMatchesKeyword). Isolé dans son propre try/catch :
+    // si ça échoue, AC/AD restent à N mais le reste de l'enrichissement continue normalement.
+    let reculStationFeats = [];
+    let reculStationOk = true;
+    try{
+      setStatus(status2El, "Récupération des prescriptions (zone de recul / accès et stationnement)…");
+      for(const layerId of RECUL_STATIONNEMENT_LAYERS){
+        const feats = await fetchPdsLayerInEnvelope(layerId, xmin, ymin, xmax, ymax, "*");
+        reculStationFeats = reculStationFeats.concat(feats);
+      }
+    }catch(e){
+      reculStationOk = false;
+      setStatus(status2El, "Prescriptions recul/stationnement non récupérées (" + e.message + ") — AC/AD laissées à N.", "warn");
+    }
+    progressBar2.style.width = "38%";
+
+    // SDC / SSC (AO + lien AP) et SOL (AQ) — même domaine que le PDS, pas de souci CORS attendu.
+    let sdcFeats = [], solFeats = [];
+    let sdcSolOk = true;
+    try{
+      setStatus(status2El, "Récupération des Schémas de Développement Communaux (SDC) et anciens Schémas de Structure Communaux (SSC)…");
+      for(const layerId of SDC_LAYERS){
+        const feats = await fetchArcgisLayerInEnvelope(SDC_BASE, layerId, xmin, ymin, xmax, ymax, "NATURE,LIENDOC");
+        sdcFeats = sdcFeats.concat(feats.map(f => ({ ...f, _layerId: layerId })));
+      }
+      progressBar2.style.width = "45%";
+      setStatus(status2El, "Récupération des Schémas d'Orientation Locaux (SOL)…");
+      solFeats = await fetchArcgisLayerInEnvelope(SOL_BASE, SOL_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+    }catch(e){
+      sdcSolOk = false;
+      setStatus(status2El, "SDC/SOL non récupérés (" + e.message + ") — AO/AP/AQ laissées à N ou /.", "warn");
+    }
+    progressBar2.style.width = "50%";
+
+    // GRU (AR, AS, AT) et GCU (AU) — même domaine que le PDS.
+    let gruZpuFeats = [], gruRgbsrFeats = [], gruAcousFeats = [], gcuFeats = [];
+    let gruGcuOk = true;
+    try{
+      setStatus(status2El, "Récupération du Guide Régional d'Urbanisme (zones protégées, RGBSR, qualité acoustique)…");
+      gruZpuFeats = await fetchArcgisLayerInEnvelope(GRU_BASE, GRU_ZPU_LAYER, xmin, ymin, xmax, ymax, "LIENDOC");
+      gruRgbsrFeats = await fetchArcgisLayerInEnvelope(GRU_BASE, GRU_RGBSR_LAYER, xmin, ymin, xmax, ymax, "LIENDOC");
+      gruAcousFeats = await fetchArcgisLayerInEnvelope(GRU_BASE, GRU_ACOUS_LAYER, xmin, ymin, xmax, ymax, "LIENDOC");
+      progressBar2.style.width = "58%";
+      setStatus(status2El, "Récupération du Guide Communal d'Urbanisme (GCU) et anciens règlements communaux (RCB/RCU)…");
+      for(const layerId of GCU_LAYERS){
+        const feats = await fetchArcgisLayerInEnvelope(GCU_BASE, layerId, xmin, ymin, xmax, ymax, "OBJECTID");
+        gcuFeats = gcuFeats.concat(feats);
+      }
+    }catch(e){
+      gruGcuOk = false;
+      setStatus(status2El, "GRU/GCU non récupérés (" + e.message + ") — AR/AS/AT/AU laissées à N.", "warn");
+    }
+    progressBar2.style.width = "63%";
+
+    setStatus(status2El, "Récupération des zones de protection des captages…");
+    const captGeoms = {};
+    for(const layer of CAPT_LAYERS){
+      captGeoms[layer.id] = await fetchCaptLayerInEnvelope(layer.id, xmin, ymin, xmax, ymax, "OBJECTID");
+      await yieldToUI();
+    }
+    const captForfait = await fetchCaptLayerInEnvelope(CAPT_FORFAIT_LAYER.id, xmin, ymin, xmax, ymax, "TYPE_CODE");
+    progressBar2.style.width = "70%";
+
+    let assainFeats = [];
+    let assainOk = true;
+    try{
+      setStatus(status2El, "Récupération du régime d'assainissement (PASH — sig.spge.be)…");
+      assainFeats = await fetchAssainissementInEnvelope(xmin, ymin, xmax, ymax);
+    }catch(e){
+      assainOk = false;
+      setStatus(status2El, "Régime d'assainissement (PASH) non récupéré (probablement bloqué par CORS depuis ce domaine) — colonnes BG à BJ laissées à N. Détail : " + e.message, "warn");
+    }
+    progressBar2.style.width = "76%";
+
+    setStatus(status2El, "Attribution des zones et périmètres à chaque ligne…");
+    let done = 0;
+    for(const row of lastRows){
+      const pds = emptyPdsRow();
+      if(typeof row._x === "number" && typeof row._y === "number"){
+        for(const z of zones){
+          if(z.geometry && z.geometry.rings && pointInRings(row._x, row._y, z.geometry.rings)){
+            const col = AFFECT_TO_COL[z.attributes.AFFECT];
+            if(col){ pds[col] = "O"; }
+            break;
+          }
+        }
+        for(const layer of PERIMETRE_LAYERS){
+          const feats = perimGeoms[layer.id];
+          for(const f of feats){
+            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+              pds[layer.col] = "O";
+              break;
+            }
+          }
+        }
+        if(reculStationOk){
+          const RS_MARGIN = 5; // tolérance en mètres pour rattacher une prescription ponctuelle proche
+          for(const f of reculStationFeats){
+            if(!f.geometry) continue;
+            let hit = false;
+            if(f.geometry.rings){
+              hit = pointInRings(row._x, row._y, f.geometry.rings);
+            } else if(typeof f.geometry.x === "number"){
+              hit = Math.hypot(row._x - f.geometry.x, row._y - f.geometry.y) <= RS_MARGIN;
+            }
+            if(!hit) continue;
+            const norm = {};
+            const attrs = f.attributes || {};
+            let matchedRecul = false, matchedStation = false;
+            for(const k in attrs){
+              const v = attrs[k];
+              if(typeof v !== "string") continue;
+              const nv = normalizeForKeyword(v);
+              if(nv.includes("RECUL")) matchedRecul = true;
+              if(nv.includes("STATIONNEMENT") || nv.includes("ACCES")) matchedStation = true;
+            }
+            if(matchedRecul) pds["AC"] = "O";
+            if(matchedStation) pds["AD"] = "O";
+          }
+        }
+
+        // --- SDC (AO) + lien (AP) : priorité à la couche 0 (SDC / Projet de SDC en vigueur)
+        // sur la couche 1 (ancien SSC) si les deux couvrent le même point.
+        if(sdcSolOk){
+          let sdcHit = null;
+          for(const f of sdcFeats){
+            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+              if(!sdcHit || (f._layerId === 0 && sdcHit._layerId !== 0)) sdcHit = f;
+            }
+          }
+          if(sdcHit){
+            pds["AO"] = "O";
+            const lien = sdcHit.attributes && sdcHit.attributes.LIENDOC;
+            pds["AP"] = (lien && String(lien).trim()) ? lien : "/";
+          }
+
+          // --- SOL (AQ)
+          for(const f of solFeats){
+            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+              pds["AQ"] = "O";
+              break;
+            }
+          }
+        }
+
+        // --- GRU : zones protégées en matière d'urbanisme (AR), règlement sur les bâtisses en
+        // site rural (AS), qualité acoustique des constructions (AT) — et GCU (AU).
+        if(gruGcuOk){
+          for(const f of gruZpuFeats){
+            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+              pds["AR"] = "O";
+              break;
+            }
+          }
+          for(const f of gruRgbsrFeats){
+            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+              pds["AS"] = "O";
+              break;
+            }
+          }
+          for(const f of gruAcousFeats){
+            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+              pds["AT"] = "O";
+              break;
+            }
+          }
+          for(const f of gcuFeats){
+            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+              pds["AU"] = "O";
+              break;
+            }
+          }
+        }
+
+        for(const layer of CAPT_LAYERS){
+          const feats = captGeoms[layer.id];
+          for(const f of feats){
+            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+              pds[layer.col] = "O";
+              break;
+            }
+          }
+        }
+        for(const f of captForfait){
+          if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+            const t = (f.attributes.TYPE_CODE || "").toUpperCase();
+            if(t === "IIA") pds["BF"] = "O";
+            else if(t === "IIB") pds["BE"] = "O";
+            break;
+          }
+        }
+        if(assainOk){
+          for(const f of assainFeats){
+            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+              const col = pashCodeToCol(f.attributes.PASHCODE);
+              if(col) pds[col] = "O";
+              break;
+            }
+          }
+        }
+      }
+      row.pds = pds;
+      done++;
+      if(done % 100 === 0){
+        progressBar2.style.width = Math.round(76 + (done/lastRows.length)*24) + "%";
+        await yieldToUI();
+      }
+    }
+    progressBar2.style.width = "100%";
+    pdsComplete = true;
+    const notes = [];
+    if(!assainOk) notes.push("assainissement non disponible — CORS");
+    if(!sdcSolOk) notes.push("SDC/SOL non disponibles");
+    if(!gruGcuOk) notes.push("GRU/GCU non disponibles");
+    const noteStr = notes.length ? ` (${notes.join(" ; ")})` : "";
+    const allOk = assainOk && sdcSolOk && gruGcuOk;
+    setStatus(status2El, `Terminé — plan de secteur, SDC/SOL, GRU/GCU, captages et assainissement complétés pour ${lastRows.length} ligne(s) (${withCoords.length} avec coordonnées)${noteStr}.`, allOk ? "ok" : "warn");
+    renderTable(lastRows);
+    $("btn-xlsx").disabled = false;
+  }catch(err){
+    setStatus(status2El, "Erreur : " + err.message, "err");
+  }finally{
+    progressWrap2.style.display = "none";
+  }
+}
+
+function exportXlsx(){
   if(!lastRows.length) return;
   const sorted = [...lastRows].sort(numSort);
-  const header = ["Pays","Code postal","Commune","Rue","Numero","Parcelle"];
-  const lines = [header.join(";")];
+  const data = [HEADERS_A_TO_AM];
   for(const r of sorted){
-    lines.push([PAYS, r.cp, r.commune, r.rue, r.numero, r.parcelleDisplay||""]
-      .map(v => `"${String(v).replace(/"/g,'""')}"`).join(";"));
+    const row = [PAYS, r.cp, r.commune, r.rue, r.numero, r.parcelleDisplay || ""];
+    for(const c of EXTRA_COLS){
+      row.push(r.pds ? (r.pds[c] || "") : "");
+    }
+    data.push(row);
   }
-  const blob = new Blob(["\uFEFF" + lines.join("\n")], {type:"text/csv;charset=utf-8"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "cadastre_adresses.csv";
-  a.click();
-  URL.revokeObjectURL(url);
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Feuil1");
+  XLSX.writeFile(wb, "export_wallonie_A_a_BJ.xlsx");
 }
 
 $("btn-search").addEventListener("click", runSearch);
-$("btn-csv").addEventListener("click", exportCsv);
+$("btn-xlsx").addEventListener("click", exportXlsx);
 [$("f-rue"), $("f-commune"), $("f-cp")].forEach(inp=>{
   inp.addEventListener("keydown", e=>{ if(e.key === "Enter") runSearch(); });
 });
