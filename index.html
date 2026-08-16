@@ -105,6 +105,7 @@
   .roadmap{ font-size:12.5px; color:#5b564d; }
   .roadmap li{ margin-bottom:4px; }
   .roadmap li.done{ color:#2c7a3e; }
+  #panel-step2{ display:none; }
 </style>
 </head>
 <body>
@@ -113,7 +114,6 @@
   <span class="coq">⌂</span>
   <div>
     <h1>Cadastre, Adresses &amp; Plan de secteur — Géoportail de Wallonie</h1>
-    <p>ICAR_ADR_PT + CADMAP_PARCELLES + AMENAGEMENT_TERRITOIRE/PDS (ArcGIS REST)</p>
   </div>
 </header>
 
@@ -144,29 +144,10 @@
   </div>
 
   <div class="panel" id="panel-step2" style="display:none;">
-    <h2>Plan de secteur, captages, assainissement, SDC/SOL &amp; GRU/GCU (colonnes G à BJ)</h2>
-    <p class="hint" style="margin-top:0;">
-      Interroge automatiquement, juste après la recherche d'adresses : <code>AMENAGEMENT_TERRITOIRE/PDS/MapServer</code>
-      (zones d'affectation G-AF + périmètres AG-AM), <code>AMENAGEMENT_TERRITOIRE/SDC/MapServer</code> (Schéma de
-      Développement Communal + anciens Schémas de Structure Communaux, colonne AO + lien AP),
-      <code>AMENAGEMENT_TERRITOIRE/SOL/MapServer</code> (Schéma d'Orientation Local, colonne AQ),
-      <code>AMENAGEMENT_TERRITOIRE/GRU/MapServer</code> (Guide Régional d'Urbanisme : zones protégées en matière
-      d'urbanisme AR, règlement sur les bâtisses en site rural AS, qualité acoustique des constructions AT),
-      <code>AMENAGEMENT_TERRITOIRE/GCU/MapServer</code> (Guide Communal d'Urbanisme + anciens RCB/RCU, colonne AU),
-      <code>EAU/PROTECT_CAPT/MapServer</code> (zones de captage BB-BF),
-      et <code>WebPash/WebPASH/MapServer</code> sur <strong>sig.spge.be</strong> (régime d'assainissement BG-BJ).
-      Ce dernier service est sur un <strong>domaine différent</strong> de geoservices.wallonie.be : si le navigateur bloque
-      la requête (CORS), les colonnes BG-BJ resteront à N et un avertissement s'affichera — le reste du résultat n'est pas affecté.
-      Les colonnes <strong>zone de recul</strong> et <strong>zone d'accès et de stationnement</strong> sont interrogées
-      via les couches 4 et 5 du même service (prescriptions ponctuelles) : réponse le plus souvent "N" (prescription rare),
-      mais bien vérifiée à chaque adresse. Seule <strong>aire d'habitat</strong> reste à <code>/</code> (colonne non
-      déduite d'une couche dans la méthode d'origine).
-      Pour la colonne <strong>AP</strong> (lien du SDC), le lien est repris directement du champ <code>LIENDOC</code> de la
-      couche SDC lorsqu'il existe (plus fiable qu'une recherche manuelle sur Google) ; à défaut la cellule reste à
-      <code>/</code>.
-    </p>
+    <h2>Plan de secteur, captages, assainissement, SDC/SOL, GRU/GCU, Patrimoine, urbanisme opérationnel, terrils, sites à réaménager (inventaire) &amp; environnement (colonnes G à CX)</h2>
+    
     <div class="row-actions">
-      <button id="btn-xlsx" class="secondary" disabled>Exporter en XLSX (colonnes A à BJ)</button>
+      <button id="btn-xlsx" class="secondary" disabled>Exporter en XLSX</button>
     </div>
     <div class="progress" id="progress2"><div id="progress-bar2"></div></div>
     <div class="status" id="status2"></div>
@@ -174,21 +155,6 @@
 
   <div id="results"></div>
 
-  <div class="panel">
-    <h2>Suite du chantier</h2>
-    <ul class="roadmap">
-      <li class="done">✓ Étape 1 — Adresses (ICAR) + numéro cadastral (CADMAP)</li>
-      <li class="done">✓ Étape 2 — Plan de secteur : zones d'affectation + périmètres de protection (G à AM)</li>
-      <li class="done">✓ Étape 3 — Captages : zones de surveillance/prévention (BB à BF)</li>
-      <li class="done">✓ Étape 4 — Assainissement (PASH) : régime collectif/autonome/transitoire (BG à BJ) — à confirmer (CORS + codes PASHCODE non intégralement vérifiés)</li>
-      <li class="done">✓ Étape 5 — SDC / SOL (AO à AQ) : Schéma de Développement Communal (+ lien LIENDOC) et Schéma d'Orientation Local, interrogés via AMENAGEMENT_TERRITOIRE/SDC et /SOL (ArcGIS)</li>
-      <li class="done">✓ Étape 6 — GRU / GCU (AR à AU) : zones protégées en matière d'urbanisme, règlement sur les bâtisses en site rural, qualité acoustique des constructions (GRU, couches 3-4-5) et Guide Communal d'Urbanisme + anciens RCB/RCU (GCU, couches 0-1-2)</li>
-      <li>Étape 7 — Aléa d'inondation, ERRUISOL, LIDAXES (AV à BA) : couche vecteur exacte pas encore identifiée avec certitude</li>
-      <li>Étape 8 — Patrimoine (BK à BP), SEVESO/PRU/SAR/PUL (BQ à BY)</li>
-      <li>Étape 9 — Terrils, sites à réaménager, ZIP, Natura 2000, forêt (BZ à CK)</li>
-      <li>Étape 10 — Préemption, BDES, EDRLR, liens réglementaires (CL à CX)</li>
-    </ul>
-  </div>
 
 </main>
 
@@ -198,9 +164,35 @@
   <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PDS/MapServer" target="_blank">Plan de secteur en vigueur (PDS)</a>,
   <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/SDC/MapServer" target="_blank">Schéma de Développement Communal (SDC)</a>,
   <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/SOL/MapServer" target="_blank">Schéma d'Orientation Local (SOL)</a>,
-  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/GRU/MapServer" target="_blank">Guide Régional d'Urbanisme (GRU)</a> et
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/GRU/MapServer" target="_blank">Guide Régional d'Urbanisme (GRU)</a>,
   <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/GCU/MapServer" target="_blank">Guide Communal d'Urbanisme (GCU)</a>,
-  Service public de Wallonie / AGDP. À vérifier visuellement sur
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/EAU/ALEA_INOND/MapServer" target="_blank">Aléa d'inondation (ALEA_INOND)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/SOL_SOUS_SOL/ERRUISSOL__RUISSELLEMENT_DIFFUS/MapServer" target="_blank">ERRUISSOL — Ruissellement diffus</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/EAU/LIDAXES/MapServer" target="_blank">LIDAXES — Axes de concentration du ruissellement</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/CAW/MapServer" target="_blank">Carte archéologique de Wallonie (CAW)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/IPIC/MapServer" target="_blank">Inventaire du Patrimoine Immobilier Culturel (IPIC)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PAT_MND_UNESCO/MapServer" target="_blank">Biens du patrimoine mondial (PAT_MND_UNESCO)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/BC_PAT/MapServer" target="_blank">Biens classés et zones de protection (BC_PAT)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PAT_LSTSAV/MapServer" target="_blank">Biens en liste de sauvegarde (PAT_LSTSAV)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PAT_EXC/MapServer" target="_blank">Biens exceptionnels (PAT_EXC)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/LOT/MapServer" target="_blank">Permis d'urbanisation et lotissements (LOT)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PLANHP/MapServer" target="_blank">Plan Habitat Permanent (PLANHP)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/RMBMT_URB/MapServer" target="_blank">Périmètres de remembrement urbain (RMBMT_URB)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/SAR/MapServer" target="_blank">Sites à réaménager de droit (SAR)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/INDUSTRIES_SERVICES/SEVESO/MapServer" target="_blank">Sites SEVESO</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/RENOV_URB/MapServer" target="_blank">Rénovation urbaine (RENOV_URB)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/REVIT_URB/MapServer" target="_blank">Revitalisation urbaine (REVIT_URB)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PRE/MapServer" target="_blank">Périmètres de reconnaissance économique (PRE)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/HABITAT/TNU_INZH/MapServer" target="_blank">Terrains non urbanisés en zones d'habitat (TNU_INZH)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/TERRILS/MapServer" target="_blank">Terrils du point de vue aménagement et urbanisme</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/ISA/MapServer" target="_blank">Inventaire des sites à réaménager (ISA)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/ZIP/MapServer" target="_blank">Zones d'Initiative Privilégiée (ZIP)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/SOL_SOUS_SOL/ERRUISSOL__EROSION_DIFFUSE/MapServer" target="_blank">ERRUISSOL — Érosion hydrique diffuse</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/FAUNE_FLORE/AHREM/MapServer" target="_blank">Arbres et haies remarquables (AHREM)</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/FAUNE_FLORE/NATURA2000/MapServer" target="_blank">Réseau Natura 2000</a>,
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/FORET/FORET/MapServer" target="_blank">Masque forestier</a> et
+  <a href="https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PPR/MapServer" target="_blank">Périmètre de préemption en aménagement du territoire (PPR)</a>,
+  Service public de Wallonie / AGDP / AWaP. À vérifier visuellement sur
   <a href="https://geoportail.wallonie.be/walonmap" target="_blank">WalOnMap</a> en cas de doute.
 </footer>
 
@@ -214,7 +206,23 @@ const PAYS = "Belgique";
 const MAX_STREETS_FOR_BORDER_CHECK = 400;
 const MAX_PARCELLES_PER_STREET = 800;
 const STREET_CONCURRENCY = 4;
+// Nombre maximum de couches (SDC, GRU, captages, patrimoine, etc.) interrogées EN MÊME TEMPS à
+// l'étape 2. Un nombre trop élevé sature la limite de connexions simultanées par domaine du
+// navigateur et peut déclencher un throttling côté serveur ArcGIS, provoquant des échecs sur des
+// services pourtant disponibles ; un nombre trop bas annule le bénéfice du parallélisme. 8 est un
+// compromis raisonnable (proche de la limite HTTP/1.1 typique de 6-8 connexions par host).
+const TASK_CONCURRENCY = 8;
 const BORDER_CHECK_CHUNK = 40;
+// Délai maximum (ms) accordé au traitement complet d'UNE rue (parcelles + axe de voirie +
+// rattachement) avant de l'abandonner et de passer à la suivante — voir le commentaire au point
+// d'appel de processStreetGroup pour le détail du problème que ce filet de sécurité corrige.
+// Délai maximum (ms) accordé au traitement complet d'UNE rue (parcelles + axe de voirie +
+// rattachement) avant de l'abandonner et de passer à la suivante. Doit rester nettement au-dessus
+// de ENVELOPE_GEOMETRY_TIMEOUT_MS (45s) puisque plusieurs requêtes paginées peuvent s'enchaîner
+// pour une même rue (plusieurs pages de parcelles, puis l'enveloppe d'adresses) — un timeout trop
+// serré ici ferait échouer des rues qui étaient sur le point de réussir, exactement le problème
+// que ce filet de sécurité est censé éviter par ailleurs (voir le commentaire au point d'appel).
+const STREET_GROUP_TIMEOUT_MS = 120000;
 
 // --- Bloc "Plan de secteur" ---
 // Correspondance code AFFECT (couche 22) -> colonne du modèle Excel (G à AF)
@@ -233,7 +241,7 @@ const ZONE_COLS = ["G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","
 // AN (aire d'habitat) vaut systématiquement "/" dans le fichier modèle sur toutes les lignes,
 // y compris pour des zones très diverses : ce n'est pas une donnée déduite d'une couche PDS mais
 // une colonne laissée telle quelle par la méthode d'origine.
-const ALWAYS_SLASH_COLS = ["AN"];
+const ALWAYS_SLASH_COLS = ["AN","CL","CP","CQ","CR","CS","CT"];
 // AC (zone de recul) et AD (zone d'accès et de stationnement) sont de VRAIES prescriptions à
 // interroger (couche 4 "Mesures d'aménagement" et couche 5 "Prescriptions supplémentaires" du
 // service PDS) : ce sont des zones ponctuelles/localisées, donc la réponse est très souvent "N"
@@ -255,49 +263,58 @@ const PERIMETRE_LAYERS = [
 const PDS_COLS = ZONE_COLS.concat(PERIMETRE_LAYERS.map(l=>l.col)).concat(["AN"]);
 
 // --- Bloc "Schéma de Développement Communal (SDC) & Schéma d'Orientation Local (SOL)" ---
-// Service distinct du PDS mais sur le même domaine geoservices.wallonie.be (pas de souci CORS
-// attendu). Couche 0 = "Schémas de Développement Communaux" (regroupe les SDC adoptés ET les
-// "Projet de SDC" — champ NATURE = "SDC" ou "PROJET_SDC") ; couche 1 = "Anciennement Schémas de
-// Structure Communaux" (SSC), qui restent valables tant qu'aucun SDC ne les remplace (le service
-// SDC est décrit par la Région comme un "miroir cartographique" des anciens SSC). Les deux couches
-// sont donc interrogées et fusionnées pour la colonne AO. Le champ LIENDOC (présent sur les deux
-// couches) fournit directement le lien du document pour la colonne AP, en priorité celui de la
-// couche 0 (SDC en vigueur) si les deux couches matchent au même endroit.
 const SDC_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/SDC/MapServer";
 const SDC_LAYERS = [0, 1];
-// Couche unique qui regroupe déjà, côté Région, les SOL proprement dits ainsi que les anciens PCA,
-// RUE, SCD et PLD (tous repris dans la définition CoDT du Schéma d'Orientation Local).
 const SOL_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/SOL/MapServer";
 const SOL_LAYER = 0;
 const SDC_SOL_COLS = ["AO","AP","AQ"];
-// AP est une colonne "lien" (texte), pas une colonne O/N : par défaut elle vaut "/", comme dans le
-// modèle Excel, et n'est renseignée que si AO = "O" et qu'un LIENDOC est disponible.
-const LINK_COLS = ["AP"];
+const LINK_COLS = ["AP","CU","CV","CW","CX"];
 
 // --- Bloc "Guide Régional d'Urbanisme (GRU) & Guide Communal d'Urbanisme (GCU)" ---
-// Service GRU (5 couches à vocation cartographique parmi les 6 exposées) : la couche 0 (GRU
-// générique), la couche 1 (accès PMR) et la couche 2 (enseignes et publicité) n'ont pas de
-// délimitation spatiale au sens strict d'après la fiche de métadonnées de la donnée et ne sont
-// donc pas utilisées ici. Les couches réellement exploitables pour une recherche géographique
-// point-dans-polygone sont :
-//   - couche 5 : GRU - Zones Protégées en matière d'Urbanisme (ZPU)              -> AR
-//   - couche 4 : GRU - Règlement Général sur les Bâtisses en Site Rural (RGBSR)  -> AS
-//   - couche 3 : GRU - Qualité acoustique des constructions                     -> AT
-// Les trois couches partagent un champ LIENDOC (lien vers le dossier / arrêté), conservé pour un
-// usage ultérieur (colonnes CU à CW du modèle complet, étape 10 du chantier).
 const GRU_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/GRU/MapServer";
 const GRU_ZPU_LAYER = 5;
 const GRU_RGBSR_LAYER = 4;
 const GRU_ACOUS_LAYER = 3;
-// Service GCU : couche 0 = Guides Communaux d'Urbanisme (nouveaux, CoDT), couche 1 = anciens
-// Règlements Communaux de Bâtisse (RCB), couche 2 = anciens Règlements Communaux d'Urbanisme
-// (RCU). Le guide de collecte précise "Guide communal d'urbanisme (+lien vers site de la
-// commune)" pour une seule colonne (AU) : les trois couches sont donc fusionnées.
 const GCU_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/GCU/MapServer";
 const GCU_LAYERS = [0, 1, 2];
 const GRU_GCU_COLS = ["AR","AS","AT","AU"];
 
 const URBANISME_COLS = SDC_SOL_COLS.concat(GRU_GCU_COLS);
+
+// --- Bloc "Aléa d'inondation / ruissellement" (AV à BA) ---
+// EAU/ALEA_INOND/MapServer, couche 2 ("échelles comprises entre 1:25.000 et 1:5000") : couche
+// VECTORIELLE (polygones), champ CLASSEMENT avec des codes numériques regroupés par 3 grandes
+// classes de gravité, qu'elles proviennent d'un débordement de cours d'eau (1xx), d'un
+// ruissellement (2xx) ou des deux combinés (3xx) :
+//   110/210/310 = Aléa FAIBLE     -> AW
+//   120/220/320 = Aléa MOYEN      -> AX
+//   130/230/330 = Aléa ÉLEVÉ      -> AY
+// Il n'existe pas, dans cette couche vectorielle officielle, de 4e classe "très faible" distincte
+// et confirmée (le référentiel distingue seulement faible/moyen/élevé) : la colonne AV (aléa très
+// faible) est donc laissée à sa valeur par défaut (N) plutôt que de risquer un mauvais mapping —
+// à vérifier manuellement sur WalOnMap si cette information est indispensable pour une parcelle
+// donnée.
+const ALEA_INOND_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/EAU/ALEA_INOND/MapServer";
+const ALEA_INOND_LAYER = 2;
+const ALEA_CLASSEMENT_TO_COL = {
+  110:"AW", 210:"AW", 310:"AW",
+  120:"AX", 220:"AX", 320:"AX",
+  130:"AY", 230:"AY", 330:"AY"
+};
+// SOL_SOUS_SOL/ERRUISSOL__RUISSELLEMENT_DIFFUS/MapServer, couche 0 : risque de ruissellement
+// diffus (méthode SCS, taux de ruissellement potentiel). Couche interrogée par enveloppe comme
+// les autres ; toute géométrie présente à l'endroit du point vaut "présence de risque" -> AZ = O.
+const ERRUISSOL_DIFFUS_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/SOL_SOUS_SOL/ERRUISSOL__RUISSELLEMENT_DIFFUS/MapServer";
+const ERRUISSOL_DIFFUS_LAYER = 0;
+// EAU/LIDAXES/MapServer, couche 1 : axes de concentration du ruissellement (LiDAXES v2), couche
+// VECTORIELLE LINÉAIRE (thalwegs/vallons secs). Une parcelle/adresse n'est quasiment jamais
+// exactement sur la ligne : on applique donc une tolérance de proximité (AXE_RUISSELLEMENT_MARGIN,
+// en mètres) au même titre que le rattachement des parcelles à un axe de voirie plus haut dans ce
+// fichier (voir ROAD_MAX).
+const LIDAXES_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/EAU/LIDAXES/MapServer";
+const LIDAXES_LAYER = 1;
+const AXE_RUISSELLEMENT_MARGIN = 15;
+const ALEA_RUISSELLEMENT_COLS = ["AV","AW","AX","AY","AZ","BA"];
 
 // --- Bloc "Captages" (EAU/PROTECT_CAPT, même domaine geoservices.wallonie.be) ---
 const CAPT_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/EAU/PROTECT_CAPT/MapServer";
@@ -309,26 +326,241 @@ const CAPT_LAYERS = [
 const CAPT_FORFAIT_LAYER = {id:4, base:CAPT_BASE}; // TYPE_CODE: IIa -> BF (forfaitaire rapprochée), IIb -> BE (forfaitaire éloignée)
 const CAPT_COLS = ["BB","BC","BD","BE","BF"];
 
-// --- Bloc "Assainissement" (PASH — SPGE, domaine DIFFÉRENT : sig.spge.be) ---
-// ATTENTION : service sur un autre domaine que geoservices.wallonie.be — le comportement CORS
-// depuis le navigateur n'a pas pu être vérifié en amont. Si la requête échoue avec une erreur
-// réseau/CORS, ce bloc doit être ignoré (les autres restent valides).
-const PASH_URL = "https://sig.spge.be/server/rest/services/WebPash/WebPASH/MapServer/6/query";
+// --- Bloc "Assainissement" (PASH — SPGE, domaine(s) DIFFÉRENT(S) de geoservices.wallonie.be) ---
+// La couche 6 "Régime d'assainissement" (champ PASHCODE) est exposée en miroir sur DEUX domaines
+// distincts, tous deux référencés officiellement par le catalogue du Géoportail de Wallonie :
+//   - sig.spge.be/server/rest/services/WebPash/WebPASH/MapServer/6      (service "pro")
+//   - sig.digiteaux.be/digiserver/rest/services/SPGE/WebPASH/MapServer/6 (service "grand public",
+//     celui effectivement lié depuis les fiches de données du Géoportail)
+// Le comportement CORS de chacun peut varier indépendamment et changer dans le temps. Pour
+// maximiser les chances d'obtenir une réponse, fetchAssainissementInEnvelope interroge LES DEUX
+// domaines en parallèle (chacun avec repli automatique fetch -> JSONP, voir fetchJsonp() plus
+// bas) et conserve le premier résultat non vide. Un compte de features est aussi renvoyé pour que
+// le message de statut affiche un diagnostic exploitable (nombre de zones PASH reçues) plutôt que
+// de basculer silencieusement vers "N" partout en cas de réponse vide.
+const PASH_MIRRORS = [
+  "https://sig.spge.be/server/rest/services/WebPash/WebPASH/MapServer/6/query",
+  "https://sig.digiteaux.be/digiserver/rest/services/SPGE/WebPASH/MapServer/6/query"
+];
 const ASSAIN_COLS = ["BG","BH","BI","BJ"];
-// Interprétation du champ PASHCODE (préfixe) — le domaine complet des valeurs n'a pas pu être
-// entièrement récupéré (liste tronquée par le service à "Ia, ...4 more..."), donc ce mapping se
-// base sur la structure connue du Code de l'Eau plutôt que sur le domaine exact : à vérifier.
-function pashCodeToCol(code){
-  if(!code) return null;
-  const c = String(code).toUpperCase();
-  if(c === "IA") return "BG";       // Collectif (RAC)
-  if(c === "IB") return "BH";       // Collectif hors zone urbanisable
-  if(c.startsWith("II")) return "BI"; // Autonome
-  if(c.startsWith("III")) return "BJ"; // Transitoire
+// BUG CORRIGÉ (important) : le champ interrogé s'appelait "PASHCODE" dans le code, mais le champ
+// réel du service (vérifié sur sig.digiteaux.be, couche 6 "Régime d'assainissement") s'appelle en
+// minuscules "pashcode" — la requête ArcGIS elle-même fonctionne (les noms de champs sont résolus
+// sans tenir compte de la casse côté serveur), mais la réponse JSON renvoie la clé EXACTEMENT
+// comme dans le schéma, donc en minuscules. Comme l'accès à une propriété d'objet est sensible à
+// la casse en JavaScript, `f.attributes.PASHCODE` valait TOUJOURS undefined, et pashCodeToCol()
+// retournait donc systématiquement null : les colonnes BG à BJ restaient à "N" sur 100% des
+// lignes, quel que soit le régime réel — ce qui expliquait un désaccord total (et non ponctuel)
+// avec le fichier de référence rempli manuellement.
+// De plus, le format des valeurs suppposé (Ia/Ib/IIa/IIb/IIIa — comme sur le champ pashcodemb,
+// "régime initial au PASH") ne correspond PAS au champ pashcode ("régime ACTUEL au PASH", celui
+// qui fait foi) : ce dernier utilise des codes courts I / II / III / X, la distinction "Collectif"
+// vs "Collectif hors zone urbanisable" se faisant en combinant pashcode="I" avec le champ
+// pdsaffectcode="HZU" (confirmé via le renderer "Unique Value" du service : couples "I,HZU" ->
+// Collectif hors zone urbanisable, "I,<autre valeur ou vide>" -> Collectif, "II,*" -> Autonome,
+// "III,*" -> Transitoire, "X" -> zone ne nécessitant pas d'épuration, hors régime BG-BJ).
+// Pour rester robuste face à d'éventuelles différences de schéma entre les deux miroirs (sig.spge.be
+// n'a pas pu être inspecté à distance, son robots.txt bloquant l'accès automatisé), l'accès aux
+// attributs se fait via getAttrCI() (recherche insensible à la casse) et un repli sur l'ancien
+// format Ia/Ib/IIa.../IIIa... (champ pashcodemb ou pcgecode) est conservé si le champ "pashcode"
+// est absent de la réponse.
+function getAttrCI(attributes, fieldName){
+  if(!attributes) return undefined;
+  const target = fieldName.toLowerCase();
+  for(const k in attributes){
+    if(k.toLowerCase() === target) return attributes[k];
+  }
+  return undefined;
+}
+function pashCodeToCol(attributes){
+  const current = getAttrCI(attributes, "pashcode");
+  if(current !== undefined && current !== null && String(current).trim() !== ""){
+    const c = String(current).toUpperCase().trim();
+    if(c === "III") return "BJ"; // Transitoire
+    if(c === "II") return "BI";  // Autonome
+    if(c === "I"){
+      const aff = getAttrCI(attributes, "pdsaffectcode");
+      const affU = aff ? String(aff).toUpperCase().trim() : "";
+      return affU === "HZU" ? "BH" : "BG"; // Collectif hors zone urbanisable / Collectif
+    }
+    return null; // "X" (pas d'épuration) ou "?" (à définir) : hors régime BG-BJ
+  }
+  // Repli sur l'ancien format (Ia/Ib/IIa.../IIIa...), au cas où le miroir interrogé exposerait
+  // plutôt le régime initial (pashcodemb) sous un nom de champ différent.
+  const legacy = getAttrCI(attributes, "pashcodemb") || getAttrCI(attributes, "pcgecode");
+  if(legacy){
+    const c = String(legacy).toUpperCase().trim();
+    if(c === "IA") return "BG";
+    if(c === "IB") return "BH";
+    if(c.startsWith("III")) return "BJ";
+    if(c.startsWith("II")) return "BI";
+  }
   return null;
 }
 
-// En-têtes complets du modèle (A à AM) pour l'export
+// --- Bloc "Patrimoine" (BK à BP) — services de l'Agence wallonne du Patrimoine (AWaP), même
+// domaine geoservices.wallonie.be que le reste, mais SIX services distincts. Chacun est interrogé
+// et attribué indépendamment des autres (try/catch séparé dans runPds) : l'échec ou l'absence
+// d'une seule couche ne fait retomber à N que sa colonne, jamais les autres colonnes Patrimoine
+// déjà calculées avec succès.
+//   BK — carte archéologique (zones à sensibilité archéologique)
+const CAW_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/CAW/MapServer";
+const CAW_LAYER = 0; // "Carte archéologique" — seule couche du service
+//   BL — inventaire du patrimoine immobilier culturel (IPIC)
+const IPIC_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/IPIC/MapServer";
+const IPIC_LAYER = 0; // "Inventaire du Patrimoine Immobilier Culturel" — seule couche du service
+//   BM — biens du patrimoine mondial (UNESCO)
+const PAT_MND_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PAT_MND_UNESCO/MapServer";
+const PAT_MND_LAYER = 0;
+//   BN — biens classés (monuments/sites/ensembles architecturaux/sites archéologiques classés)
+//   ET leurs zones de protection : le libellé du modèle Excel ("Bien classé et zone de
+//   protection") regroupe les deux, donc les 5 couches du service sont interrogées ensemble et
+//   toute géométrie touchée (quelle que soit la couche) vaut "O". La couche 0 (Monuments classés)
+//   est PONCTUELLE (voir description officielle du service) ; les couches 1 à 4 sont des polygones.
+const BC_PAT_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/BC_PAT/MapServer";
+const BC_PAT_LAYERS = [0, 1, 2, 3, 4];
+//   BO — biens en liste de sauvegarde (même structure que BC_PAT : monuments/sites/sites
+//   archéologiques/ensembles architecturaux inscrits en liste de sauvegarde). Le nombre exact de
+//   couches du service n'a pas pu être confirmé à distance ; on tente les couches 0 à 3 et on
+//   ignore individuellement celles qui n'existent pas (erreur ArcGIS "layer not found"), sans faire
+//   échouer les autres.
+const PAT_LSTSAV_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PAT_LSTSAV/MapServer";
+const PAT_LSTSAV_CANDIDATE_LAYERS = [0, 1, 2, 3];
+//   BP — biens exceptionnels
+const PAT_EXC_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PAT_EXC/MapServer";
+const PAT_EXC_LAYER = 0;
+const PATRIMOINE_COLS = ["BK","BL","BM","BN","BO","BP"];
+// Tolérance (en mètres) appliquée aux couches Patrimoine dont la géométrie renvoyée est
+// PONCTUELLE (ex. BC_PAT couche 0 "Monuments classés") — une adresse n'est presque jamais
+// exactement sur le point du monument, donc on rattache par proximité comme pour les autres
+// couches ponctuelles de cet outil (RS_MARGIN, AXE_RUISSELLEMENT_MARGIN).
+const PATRIMOINE_POINT_MARGIN = 25;
+
+// --- Bloc "Urbanisme opérationnel & risques industriels" (BQ à BY) — huit services
+// supplémentaires, chacun essayé indépendamment (même logique de tolérance de panne que le bloc
+// Patrimoine ci-dessus). Le nom de service et le domaine de CHAQUE couche ont été vérifiés un par
+// un dans le catalogue ArcGIS REST du Géoportail avant d'être codés en dur ici — en particulier
+// SEVESO, qui n'est PAS sous AMENAGEMENT_TERRITOIRE mais sous INDUSTRIES_SERVICES (piège classique
+// évité volontairement). Pour la plupart de ces services, le catalogue officiel décrit un jeu de
+// données UNIQUE (pas une "série" à plusieurs couches thématiques comme PDS/GRU/SOL) : la couche
+// utile est donc très probablement la couche 0, mais comme cela n'a pas pu être confirmé à 100%
+// pour chacun à distance (contrairement à TNU_INZH, confirmé couche "TNU (0)"), on utilise la même
+// fonction tolérante que pour PAT_LSTSAV (fetchArcgisLayersTolerant) : les couches candidates 0-2
+// sont essayées, celles qui n'existent pas sont ignorées individuellement, sans faire échouer les
+// autres. SEVESO est un cas à part : son descriptif officiel précise qu'il est "constitué de
+// plusieurs classes d'objets" (sites Grand/Petit Seuil + zones vulnérables) ; on élargit donc la
+// plage de couches candidates à 0-5 pour ce service précis, avec la même tolérance.
+//   BQ — permis d'urbanisation et lotissements
+const LOT_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/LOT/MapServer";
+const LOT_CANDIDATE_LAYERS = [0, 1, 2];
+//   BR — Plan Habitat Permanent
+const PLANHP_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PLANHP/MapServer";
+const PLANHP_CANDIDATE_LAYERS = [0, 1, 2];
+//   BS — périmètre de remembrement urbain (PRU)
+const RMBMT_URB_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/RMBMT_URB/MapServer";
+const RMBMT_URB_CANDIDATE_LAYERS = [0, 1, 2];
+//   BT — site à réaménager de droit (SAR)
+const SAR_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/SAR/MapServer";
+const SAR_CANDIDATE_LAYERS = [0, 1, 2];
+//   BU — sites SEVESO (domaine INDUSTRIES_SERVICES, PAS AMENAGEMENT_TERRITOIRE)
+const SEVESO_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/INDUSTRIES_SERVICES/SEVESO/MapServer";
+const SEVESO_CANDIDATE_LAYERS = [0, 1, 2, 3, 4, 5];
+//   BV — rénovation urbaine
+const RENOV_URB_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/RENOV_URB/MapServer";
+const RENOV_URB_CANDIDATE_LAYERS = [0, 1, 2];
+//   BW — revitalisation urbaine
+const REVIT_URB_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/REVIT_URB/MapServer";
+const REVIT_URB_CANDIDATE_LAYERS = [0, 1, 2];
+//   BX — périmètre de reconnaissance économique (PRE)
+const PRE_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PRE/MapServer";
+const PRE_CANDIDATE_LAYERS = [0, 1, 2];
+//   BY — terrains non urbanisés en zones d'habitat au plan de secteur (domaine HABITAT, couche
+//   "TNU" confirmée en position 0 dans le catalogue ArcGIS REST — pas besoin de mode tolérant ici)
+const TNU_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/HABITAT/TNU_INZH/MapServer";
+const TNU_LAYER = 0;
+const URB_OP_COLS = ["BQ","BR","BS","BT","BU","BV","BW","BX","BY"];
+// Toutes les couches de ce bloc sont des polygones (périmètres opérationnels ou sites SEVESO avec
+// leur zone vulnérable) : geometryHitsPoint() couvre aussi le cas ponctuel si jamais SEVESO expose
+// les sites eux-mêmes sous forme de points, avec la même tolérance que le bloc Patrimoine.
+const URB_OP_POINT_MARGIN = 25;
+
+// --- Bloc "Terrils, inventaire des sites à réaménager, environnement & préemption" (BZ à CM) —
+// services confirmés un par un dans le catalogue ArcGIS REST du Géoportail (nom du service ET
+// numéro de couche vérifiés via /MapServer?f=json, à l'exception des services AHREM et — voir
+// commentaire dédié plus bas — ERRUISSOL__EROSION_DIFFUSE, deux "séries" dont le nombre exact ou
+// le sens exact des couches n'était pas évident sans inspection, traitées en mode tolérant/combiné
+// comme PAT_LSTSAV plus haut).
+//   BZ / CA — Terrils du point de vue aménagement et urbanisme : couche UNIQUE (0), champ MAJEUR
+//   avec deux valeurs codées "Non" (-> BZ, non majeur) et "Oui" (-> CA, majeur), confirmées via le
+//   renderer du service (uniqueValueInfos).
+const TERRILS_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/TERRILS/MapServer";
+const TERRILS_LAYER = 0;
+//   CB à CF — Inventaire des sites à réaménager (ISA), service "série" à 5 couches, mapping
+//   confirmé via /MapServer?f=json (l'ordre des couches ne correspond PAS à l'ordre des colonnes
+//   du modèle Excel, d'où la table explicite ci-dessous plutôt qu'une simple boucle) :
+//     0 = Périmètres historiques des sites d'activité -> CB
+//     1 = Activités antérieures et actuelles           -> CC
+//     2 = Potentiel de reconversion                    -> CD
+//     3 = Bâtiments                                    -> CE
+//     4 = Sites à réaménager (sar)                     -> CF
+const ISA_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/ISA/MapServer";
+const ISA_LAYERS = [
+  {id:0, col:"CB", label:"Périmètres historiques des sites d'activité"},
+  {id:1, col:"CC", label:"Activités antérieures et actuelles"},
+  {id:2, col:"CD", label:"Potentiel de reconversion"},
+  {id:3, col:"CE", label:"Bâtiments"},
+  {id:4, col:"CF", label:"Sites à réaménager (sar)"}
+];
+//   CG — Zone d'initiative privilégiée (ZIP), couche unique (0)
+const ZIP_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/ZIP/MapServer";
+const ZIP_LAYER = 0;
+//   CH — ERRUISSOL, risque d'érosion hydrique diffuse (à ne pas confondre avec le risque de
+//   ruissellement diffus déjà utilisé pour AZ, un service ERRUISSOL différent).
+//   BUG CORRIGÉ : le service /MapServer?f=json confirme que ERRUISSOL__EROSION_DIFFUSE expose
+//   TROIS couches distinctes, une par occupation du sol, toutes au même seuil de perte en sol
+//   (10 T/ha/an) — 0 "prairie", 1 "culture non sarclée", 2 "culture sarclée" — et non une seule
+//   couche comme précédemment codé (seule la couche 0, "prairie", la moins sensible des trois
+//   scénarios, était interrogée). La méthode manuelle de référence (voir fichier des étapes de
+//   collecte : "-risque d'érosion hydrique (CH) *dézoomer la carte") observe la carte WalOnMap
+//   dézoomée, où les 3 couches du groupe sont affichées superposées : un "O" y est coché dès
+//   qu'AU MOINS UNE des 3 occupations du sol montre un risque à l'endroit considéré. Ne
+//   n'interroger que la couche 0 sous-comptait donc fortement le risque (quasi toujours "N" alors
+//   que la référence manuelle est "O" sur la grande majorité des lignes). Les 3 couches candidates
+//   sont désormais interrogées et combinées en OU logique via fetchArcgisLayersTolerant, exactement
+//   comme pour AHREM juste en dessous.
+const EROSION_DIFFUSE_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/SOL_SOUS_SOL/ERRUISSOL__EROSION_DIFFUSE/MapServer";
+const EROSION_DIFFUSE_CANDIDATE_LAYERS = [0, 1, 2];
+//   CI — Arbres et haies remarquables (AHREM) : série de couches (arbres isolés, haies, sites…),
+//   nombre exact non confirmé à distance -> mode tolérant, couches candidates 0 à 3.
+const AHREM_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/FAUNE_FLORE/AHREM/MapServer";
+const AHREM_CANDIDATE_LAYERS = [0, 1, 2, 3];
+//   CJ — Réseau Natura 2000 (unités de gestion en vigueur), couche 0 confirmée
+const NATURA2000_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/FAUNE_FLORE/NATURA2000/MapServer";
+const NATURA2000_LAYER = 0;
+//   CK — Masque forestier : service RASTER (image), pas une couche vectorielle comme les autres.
+//   Interrogé en meilleur effort via une requête d'identification par enveloppe ; si le service ne
+//   renvoie pas de géométrie exploitable (comportement attendu d'un raster), la colonne reste à N
+//   avec un avertissement plutôt que d'inventer une valeur.
+const FORET_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/FORET/FORET/MapServer";
+const FORET_LAYER = 0;
+//   CM — Périmètre de préemption en aménagement du territoire (PPR), couche 0
+const PPR_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PPR/MapServer";
+const PPR_LAYER = 0;
+
+const TERRILS_ISA_ENV_COLS = ["BZ","CA","CB","CC","CD","CE","CF","CG","CH","CI","CJ","CK"];
+// CL (lien contrat de rénovation urbaine, manuel), CM (préemption, implémentée), puis CN à CT
+// (BDES, quartiers à loyers majorés, Territoire du Canal, pôle de développement prioritaire, zone
+// de revitalisation urbaine, EDRLR — aucun service ArcGIS fiable identifié à ce stade, restent à
+// leur valeur par défaut). Cette liste DOIT respecter l'ordre exact des colonnes du modèle Excel.
+const CL_TO_CT_COLS = ["CL","CM","CN","CO","CP","CQ","CR","CS","CT"];
+// Même tolérance de proximité que pour le bloc Patrimoine, pour les couches candidates dont le
+// type de géométrie exact (point vs polygone) n'est pas garanti (AHREM notamment, qui mélange
+// arbres isolés ponctuels et haies/sites linéaires ou surfaciques selon la couche).
+const ENV_POINT_MARGIN = 25;
+
+// En-têtes complets du modèle (A à CX) pour l'export — DOIT rester strictement aligné, colonne par
+// colonne, sur EXTRA_COLS ci-dessous (même ordre, même nombre d'entrées) : c'est cet alignement
+// positionnel qui garantit que chaque en-tête tombe au-dessus de la bonne donnée à l'export.
 const HEADERS_A_TO_AM = ["Pays","Code Postal","Communes","Rue","Numéro","Numéro cadastral",
   "zone d'habitat","zone d'habitat à caractère rural","Zone d'habitat vert",
   "Zone de services publics et équipements communautaires","zone de loisirs",
@@ -352,12 +584,39 @@ const HEADERS_A_TO_AM = ["Pays","Code Postal","Communes","Rue","Numéro","Numér
   "Guide régional d'urbanisme Règlement général sur les bâtisses en site rural",
   "Guide régional d'urbanisme Règlement d’urbanisme sur la qualité acoustique de constructions dans les zones B, C et D des plans de développement à long terme des aéroports de Liège-Bierset et de Charleroi-Bruxelles Sud",
   "Guide communal d'urbanisme (+lien vers site de la commune)",
+  "aléa tres faible","Aléa faible","aléa moyen","Aléa élevé",
+  "Risque de ruissellement diffus","Axe de concentration de ruissellement",
   "Zone de surveillance","Zone de prévention rapprochée IIa","Zone de prévention éloignée IIb",
   "Zones de prévention forfaitaires éloignée Ilb","Zones de prévention forfaitaires II",
-  "Collectif","Collectif hors zone urbanisable","Autonome","Transitoire"];
+  "Collectif","Collectif hors zone urbanisable","Autonome","Transitoire",
+  "Zone archéologique (carte archéologique)","Patrimoine immobilier culturel","Biens mondiaux",
+  "Bien classé et zone de protection","Bien en liste de sauvegarde","Biens exceptionnels",
+  "Permis d'urbanisation","Plan Habitat permanent","Périmètre de remembrement urbain",
+  "Site à réaménager de droit","Sites SEVESO","Rénovation urbaine","Revitalisation urbaine",
+  "Périmètre de reconnaisance économique","Terrains non urbanisés en zones destinées au plan de secteur",
+  "Terrils du point de vue aménagement et urbanisme Non Majeur",
+  "Terrils du point de vue aménagement et urbanisme Majeur",
+  "Site à réaménager (Périmètres des sites d'activité)",
+  "Site à réaménager (Activités antérieurs et actuelles)",
+  "Site à réaménager (Inventaire) - Potentiel de reconversion",
+  "Site à réaménager (Inventaire) - Bâtiments",
+  "Site à réaménager (Inventaire) - Site à Réaménager (sar)",
+  "Zones d'initatiative privilégiée","Risques d'érosion hydrique diffuse ",
+  "Arbres et haies remarquables","Site Natura 2000","Forêt",
+  "Contrats de rénovation urbaine","Zone de préemption",
+  "Parcelle nécessitant des démarches","Parcelle de nature indicative",
+  "Quartier à loyers majorés","Territoire du Canal…","Pole de développement prioritaire",
+  "Zone de revitalisation urbaine","EDRLR",
+  "Lien Guide régional d'urbanisme Règlement général sur les bâtisses applicable aux zones protégées de certaines communes en matière d’urbanisme (ZPU)",
+  "Lien pour le  Règlement général sur les bâtisses en site rural",
+  "Lien le  pour  Guide régional d'urbanisme Règlement d’urbanisme sur la qualité acoustique de constructions dans les zones B, C et D des plans de développement à long terme des aéroports de Liège-Bierset et de Charleroi-Bruxelles Sud",
+  "Lien Pour les Guide communal d'urbanisme"];
 
 // Toutes les colonnes "enrichissement" (au-delà de A-F), dans l'ordre du modèle
-const EXTRA_COLS = PDS_COLS.concat(URBANISME_COLS).concat(CAPT_COLS).concat(ASSAIN_COLS);
+const CU_CV_CW_CX_COLS = ["CU","CV","CW","CX"];
+const EXTRA_COLS = PDS_COLS.concat(URBANISME_COLS).concat(ALEA_RUISSELLEMENT_COLS).concat(CAPT_COLS)
+  .concat(ASSAIN_COLS).concat(PATRIMOINE_COLS).concat(URB_OP_COLS).concat(TERRILS_ISA_ENV_COLS)
+  .concat(CL_TO_CT_COLS).concat(CU_CV_CW_CX_COLS);
 
 // Mapping lettre de colonne -> vrai nom de colonne (tel qu'écrit dans le modèle Excel)
 const PDS_COL_NAMES = {};
@@ -381,13 +640,84 @@ function esc(v){ return (v === null || v === undefined || v === "") ? "" : Strin
 function sqlEscape(v){ return v.replace(/'/g, "''"); }
 function yieldToUI(){ return new Promise(resolve => setTimeout(resolve, 0)); }
 
-async function fetchJson(url, params){
+// IMPORTANT : toute requête réseau de cet outil passe par fetchJson, qui applique désormais un
+// délai maximum (AbortController) avant d'abandonner. Sans cela, un service ArcGIS lent ou qui ne
+// répond jamais (cas observé sur TOPOGRAPHIE/PICC_VDIFF pour de longues rues) bloquait l'outil
+// indéfiniment sur le message "Vérification des parcelles bordant la rue…", sans erreur ni
+// possibilité de continuer. Le timeout par défaut est de 25s ; les appelants peuvent le réduire ou
+// l'augmenter via le 3e paramètre si nécessaire.
+async function fetchJson(url, params, timeoutMs){
   const usp = new URLSearchParams(params);
-  const res = await fetch(url + "?" + usp.toString());
-  if(!res.ok) throw new Error("HTTP " + res.status);
-  const data = await res.json();
-  if(data.error) throw new Error(data.error.message || "Erreur API ArcGIS");
-  return data;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs || 25000);
+  try{
+    const res = await fetch(url + "?" + usp.toString(), { signal: controller.signal });
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if(data.error) throw new Error(data.error.message || "Erreur API ArcGIS");
+    return data;
+  }catch(e){
+    if(e.name === "AbortError"){
+      throw new Error(`délai dépassé (${Math.round((timeoutMs || 25000) / 1000)}s) — le service ne répond pas`);
+    }
+    throw e;
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+// Repli JSONP générique pour les services ArcGIS Server qui ne renvoient pas d'en-têtes CORS
+// (fetch() échoue alors avec une TypeError réseau avant même d'atteindre le serveur). Le endpoint
+// ArcGIS REST standard accepte un paramètre "callback" et répond en JSONP (f=json est toujours
+// utilisé pour le format des données ; c'est le paramètre callback qui bascule la réponse en
+// JSONP). Cette technique passe par une balise <script>, donc n'est jamais bloquée par CORS.
+let __jsonpCounter = 0;
+function fetchJsonp(url, params, timeoutMs){
+  return new Promise((resolve, reject) => {
+    const cbName = "__jsonp_cb_" + (Date.now()) + "_" + (__jsonpCounter++);
+    const usp = new URLSearchParams(Object.assign({}, params, { callback: cbName }));
+    const script = document.createElement("script");
+    let done = false;
+    const cleanup = () => {
+      delete window[cbName];
+      if(script.parentNode) script.parentNode.removeChild(script);
+      if(timer) clearTimeout(timer);
+    };
+    window[cbName] = (data) => {
+      if(done) return;
+      done = true;
+      cleanup();
+      if(data && data.error){ reject(new Error(data.error.message || "Erreur API ArcGIS (JSONP)")); return; }
+      resolve(data);
+    };
+    script.onerror = () => {
+      if(done) return;
+      done = true;
+      cleanup();
+      reject(new Error("Échec JSONP (réseau ou service indisponible)"));
+    };
+    const timer = setTimeout(() => {
+      if(done) return;
+      done = true;
+      cleanup();
+      reject(new Error("Délai dépassé (JSONP)"));
+    }, timeoutMs || 20000);
+    script.src = url + "?" + usp.toString();
+    document.head.appendChild(script);
+  });
+}
+
+// Requête avec repli automatique fetch -> JSONP. Utilisée pour tout service dont le support CORS
+// n'est pas garanti (ici : PASH sur sig.spge.be, domaine tiers).
+async function fetchJsonWithJsonpFallback(url, params){
+  try{
+    return await fetchJson(url, params);
+  }catch(e){
+    // On ne retente en JSONP que pour les échecs réseau/CORS typiques (TypeError "Failed to
+    // fetch"), pas pour une erreur HTTP explicite (ex: 404), afin de renvoyer le message le plus
+    // pertinent en cas d'échec définitif.
+    return await fetchJsonp(url, Object.assign({ f: "json" }, params), 20000);
+  }
 }
 
 async function fetchAdresses(rue, commune, cp){
@@ -413,17 +743,46 @@ async function fetchAdresses(rue, commune, cp){
   return all;
 }
 
+// BUG CORRIGÉ : cette fonction prenait auparavant systématiquement feats[0] (le premier résultat),
+// ce qui est correct quand une seule parcelle touche le point, mais devient un choix ARBITRAIRE
+// quand le point d'adresse tombe exactement sur la limite entre deux (ou plus) parcelles voisines
+// — cas fréquent (point d'adresse placé pile sur la ligne mitoyenne ou sur un sommet partagé par
+// plusieurs polygones CADMAP). Dans ce cas, esriSpatialRelIntersects renvoie TOUTES les parcelles
+// concernées, dans un ordre qui n'est pas garanti correspondre à "la bonne" parcelle (celle que
+// choisirait un opérateur humain en regardant l'emprise du bâtiment). Comparé au fichier de
+// référence rempli manuellement, ce choix arbitraire causait des numéros cadastraux corrects en
+// apparence mais erronés (parcelle voisine) sur plusieurs adresses. Le correctif : quand plusieurs
+// parcelles touchent le point, on choisit celle dont le CENTROÏDE est le plus proche du point
+// d'adresse — une heuristique simple mais nettement plus fiable qu'un choix arbitraire pour ces
+// cas limites, sans coût significatif (les parcelles cadastrales sont petites, la géométrie reste
+// légère).
 async function findParcelle(x, y){
   const geometry = JSON.stringify({ x, y, spatialReference: { wkid: 31370 } });
   const data = await fetchJson(CAD_URL, {
     geometry, geometryType: "esriGeometryPoint", inSR: "31370",
     spatialRel: "esriSpatialRelIntersects",
     outFields: "CAPAKEY,NOM_COMMUNE,DIV_NOM,SECT,RADICAL,BIS,EXPOSANT,PUISSANCE",
-    returnGeometry: "false", f: "json"
+    returnGeometry: "true", outSR: "31370", f: "json"
   });
   const feats = data.features || [];
-  return feats.length ? feats[0].attributes : null;
+  if(!feats.length) return null;
+  if(feats.length === 1) return feats[0].attributes;
+  let best = feats[0], bestDist = Infinity;
+  for(const f of feats){
+    if(!f.geometry || !f.geometry.rings) continue;
+    const c = ringCentroid(f.geometry.rings);
+    const d = Math.hypot(x - c.x, y - c.y);
+    if(d < bestDist){ bestDist = d; best = f; }
+  }
+  return best.attributes;
 }
+
+// Timeout dédié, plus généreux que le défaut (25s) de fetchJson : ces trois fonctions transfèrent
+// des géométries complètes (polygones/lignes) page par page et peuvent légitimement dépasser 25s
+// sur une rue dense (beaucoup de parcelles) sans qu'il y ait de panne réelle du service — les
+// couper à 25s ne faisait qu'écarter silencieusement des rues qui auraient fini par répondre,
+// d'où des parcelles "sans point d'adresse" (orphelines, marquées /) non détectées.
+const ENVELOPE_GEOMETRY_TIMEOUT_MS = 45000;
 
 async function fetchParcellesInEnvelope(xmin, ymin, xmax, ymax){
   const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
@@ -435,7 +794,7 @@ async function fetchParcellesInEnvelope(xmin, ymin, xmax, ymax){
       outFields: "CAPAKEY,NOM_COMMUNE,DIV_NOM,SECT,RADICAL,BIS,EXPOSANT,PUISSANCE",
       returnGeometry: "true", outSR: "31370",
       resultRecordCount: pageSize, resultOffset: offset, f: "json"
-    });
+    }, ENVELOPE_GEOMETRY_TIMEOUT_MS);
     const feats = data.features || [];
     all = all.concat(feats);
     if(feats.length < pageSize) break;
@@ -455,7 +814,7 @@ async function fetchAdressesInEnvelope(xmin, ymin, xmax, ymax){
       outFields: "ADR_NUMERO,RUE_NM,CODE_POSTAL,COM_NM",
       returnGeometry: "true", outSR: "31370",
       resultRecordCount: pageSize, resultOffset: offset, f: "json"
-    });
+    }, ENVELOPE_GEOMETRY_TIMEOUT_MS);
     const feats = data.features || [];
     all = all.concat(feats);
     if(feats.length < pageSize) break;
@@ -502,7 +861,7 @@ async function fetchVoirieAxe(rue, commune, xmin, ymin, xmax, ymax){
       outFields: "RUE_NOM1,COMMU_NOM1,RUE_NOM2,COMMU_NOM2",
       returnGeometry: "true", outSR: "31370",
       resultRecordCount: pageSize, resultOffset: offset, f: "json"
-    });
+    }, ENVELOPE_GEOMETRY_TIMEOUT_MS);
     const feats = data.features || [];
     all = all.concat(feats);
     if(feats.length < pageSize) break;
@@ -555,6 +914,18 @@ function distRingsToPaths(rings, paths){
   }
   return min;
 }
+function distPointToPaths(px, py, paths){
+  let min = Infinity;
+  for(const path of paths){
+    for(let k=0;k<path.length-1;k++){
+      const [bx1,by1] = path[k], [bx2,by2] = path[k+1];
+      const d = distPointToSegment(px, py, bx1, by1, bx2, by2);
+      if(d < min) min = d;
+      if(min === 0) return 0;
+    }
+  }
+  return min;
+}
 function pointInRings(x, y, rings){
   let inside = false;
   for(const ring of rings){
@@ -567,6 +938,56 @@ function pointInRings(x, y, rings){
     }
   }
   return inside;
+}
+// Cache paresseuse de la boîte englobante (bbox) d'une géométrie polygonale, calculée UNE SEULE
+// FOIS par géométrie (mise en cache directement sur l'objet "feature" via une propriété interne
+// __bbox) plutôt qu'à chaque test. C'est un gain important car la même liste de géométries (ex.
+// les zones du plan de secteur) est testée pour CHAQUE ligne du résultat : sans cache, la bbox
+// serait recalculée autant de fois qu'il y a de lignes. Le test bbox lui-même est un simple rejet
+// rapide (4 comparaisons) qui évite d'entrer dans pointInRings (coût proportionnel au nombre de
+// sommets du polygone) pour la grande majorité des couples (ligne, géométrie) qui ne se
+// chevauchent pas.
+function getRingsBBox(feature){
+  if(feature.__bbox !== undefined) return feature.__bbox;
+  const rings = feature.geometry && feature.geometry.rings;
+  if(!rings){ feature.__bbox = null; return null; }
+  let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
+  for(const ring of rings){
+    for(const pt of ring){
+      if(pt[0] < xmin) xmin = pt[0];
+      if(pt[0] > xmax) xmax = pt[0];
+      if(pt[1] < ymin) ymin = pt[1];
+      if(pt[1] > ymax) ymax = pt[1];
+    }
+  }
+  feature.__bbox = { xmin, ymin, xmax, ymax };
+  return feature.__bbox;
+}
+// Remplace le motif répété `f.geometry && f.geometry.rings && pointInRings(x, y, f.geometry.rings)`
+// utilisé partout dans l'attribution : rejet rapide par bbox avant le test exact d'inclusion.
+function ringsHitPoint(feature, x, y){
+  const rings = feature.geometry && feature.geometry.rings;
+  if(!rings) return false;
+  const bbox = getRingsBBox(feature);
+  if(bbox && (x < bbox.xmin || x > bbox.xmax || y < bbox.ymin || y > bbox.ymax)) return false;
+  return pointInRings(x, y, rings);
+}
+// Test générique "la géométrie touche-t-elle le point (x,y) ?", valable pour une géométrie
+// renvoyée par ArcGIS quel que soit son type : polygone (rings, test d'inclusion exact) ou
+// ponctuelle (x/y, test de proximité avec tolérance pointMargin). Utilisé par les couches
+// Patrimoine, dont certaines (ex. BC_PAT couche 0 "Monuments classés") sont ponctuelles alors que
+// les autres couches de cet outil sont presque toutes polygonales.
+function geometryHitsPoint(feature, x, y, pointMargin){
+  const g = feature.geometry;
+  if(!g) return false;
+  if(g.rings) return ringsHitPoint(feature, x, y);
+  if(g.paths){
+    return distPointToPaths(x, y, g.paths) <= (pointMargin || 0);
+  }
+  if(typeof g.x === "number" && typeof g.y === "number"){
+    return Math.hypot(x - g.x, y - g.y) <= (pointMargin || 0);
+  }
+  return false;
 }
 function ringCentroid(rings){
   const ring = rings[0];
@@ -860,7 +1281,7 @@ async function runSearch(){
 
     const matchedCapakeys = new Set();
 
-    const addressRows = await mapLimit(feats, 6, async (f) => {
+    const addressRows = await mapLimit(feats, 10, async (f) => {
       const a = f.attributes;
       const g = f.geometry;
       let capakey = null, parcelleDisplay = null;
@@ -908,9 +1329,21 @@ async function runSearch(){
             setStatus(statusEl, `Vérification des parcelles bordant la rue… (rue ${done + 1}/${groups.length} : ${group.rue}, ${group.commune})`);
             let res;
             try{
-              res = await processStreetGroup(group, matchedCapakeys, () => {
-                setStatus(statusEl, `Vérification des parcelles bordant la rue… (rue ${done + 1}/${groups.length} : ${group.rue}, ${group.commune})`);
-              });
+              // Filet de sécurité supplémentaire : même si chaque requête individuelle a son
+              // propre timeout (voir fetchJson), une rue avec beaucoup de pages de résultats
+              // pourrait, en cas de service très lent, cumuler ces délais et bloquer longtemps le
+              // traitement des autres rues. Un timeout global par rue (STREET_GROUP_TIMEOUT_MS)
+              // garantit que le traitement avance toujours : la rue trop lente est simplement
+              // marquée "ignorée", sans jamais figer l'outil.
+              res = await Promise.race([
+                processStreetGroup(group, matchedCapakeys, () => {
+                  setStatus(statusEl, `Vérification des parcelles bordant la rue… (rue ${done + 1}/${groups.length} : ${group.rue}, ${group.commune})`);
+                }),
+                new Promise((_, reject) => setTimeout(
+                  () => reject(new Error(`délai global dépassé (${Math.round(STREET_GROUP_TIMEOUT_MS/1000)}s) pour cette rue`)),
+                  STREET_GROUP_TIMEOUT_MS
+                ))
+              ]);
             }catch(e){
               res = { orphanRows: [], skipped: true, reason: e.message };
             }
@@ -945,7 +1378,7 @@ async function runSearch(){
   }
 }
 
-// ---------- Étape 2 : Plan de secteur, SDC/SOL, GRU/GCU, captages, assainissement ----------
+// ---------- Étape 2 : Plan de secteur, SDC/SOL, GRU/GCU, aléa inondation, captages, assainissement, patrimoine ----------
 
 async function fetchPdsLayerInEnvelope(layerId, xmin, ymin, xmax, ymax, outFields){
   const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
@@ -967,8 +1400,10 @@ async function fetchPdsLayerInEnvelope(layerId, xmin, ymin, xmax, ymax, outField
 }
 
 // Fonction générique réutilisée pour tous les services ArcGIS supplémentaires interrogés par
-// enveloppe (SDC, SOL, GRU, GCU) — même logique de pagination que fetchPdsLayerInEnvelope, mais
-// paramétrée par l'URL de base du service pour éviter de dupliquer le code par couche.
+// enveloppe (SDC, SOL, GRU, GCU, ALEA_INOND, ERRUISSOL, LIDAXES, Patrimoine, et désormais les
+// services Terrils / ISA / ZIP / érosion diffuse / AHREM / Natura 2000 / forêt / PPR) — même
+// logique de pagination que fetchPdsLayerInEnvelope, mais paramétrée par l'URL de base du service
+// pour éviter de dupliquer le code par couche.
 async function fetchArcgisLayerInEnvelope(base, layerId, xmin, ymin, xmax, ymax, outFields){
   const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
   let offset = 0; const pageSize = 2000; let all = [];
@@ -984,6 +1419,32 @@ async function fetchArcgisLayerInEnvelope(base, layerId, xmin, ymin, xmax, ymax,
     if(feats.length < pageSize) break;
     offset += pageSize;
     if(offset > 40000) break;
+  }
+  return all;
+}
+
+// Variante "tolérante" de fetchArcgisLayerInEnvelope : utilisée quand le nombre exact de couches
+// du service n'est pas garanti (ex. PAT_LSTSAV, AHREM), OU quand plusieurs couches doivent être
+// COMBINÉES en OU logique par nature (ex. EROSION_DIFFUSE : une couche par occupation du sol).
+// Essaie chaque identifiant de couche candidat l'un après l'autre ; une couche qui n'existe pas
+// (erreur ArcGIS "Layer not found") est simplement ignorée au lieu de faire échouer tout le bloc —
+// les couches valides restent exploitées, et leurs features sont concaténées (donc combinées en OU
+// logique au moment de l'attribution géométrique, comme pour n'importe quelle liste de features).
+async function fetchArcgisLayersTolerant(base, candidateLayerIds, xmin, ymin, xmax, ymax, outFields){
+  let all = [];
+  let anySucceeded = false;
+  const errors = [];
+  for(const layerId of candidateLayerIds){
+    try{
+      const feats = await fetchArcgisLayerInEnvelope(base, layerId, xmin, ymin, xmax, ymax, outFields);
+      all = all.concat(feats);
+      anySucceeded = true;
+    }catch(e){
+      errors.push(layerId + ": " + e.message);
+    }
+  }
+  if(!anySucceeded){
+    throw new Error("aucune couche valide parmi [" + candidateLayerIds.join(",") + "] — " + errors.join(" ; "));
   }
   return all;
 }
@@ -1027,25 +1488,60 @@ async function fetchCaptLayerInEnvelope(layerId, xmin, ymin, xmax, ymax, outFiel
   return all;
 }
 
-// Domaine potentiellement différent (sig.spge.be) : on isole l'échec (CORS ou autre) sans
-// bloquer le reste de l'enrichissement.
-async function fetchAssainissementInEnvelope(xmin, ymin, xmax, ymax){
+// Interroge un seul miroir PASH (avec pagination + repli JSONP), sans jamais lancer d'exception :
+// une erreur (réseau, CORS, HTTP) donne juste un tableau vide + le message d'erreur, pour que
+// Promise.allSettled côté appelant puisse comparer tous les miroirs sans qu'un échec en bloque un
+// autre. NB: pas de filtre "WHERE" ici volontairement — on récupère toutes les géométries qui
+// intersectent l'enveloppe puis on fait le tri par PASHCODE au moment de l'attribution ligne par
+// ligne (comme pour les autres couches de ce fichier), afin de ne jamais dépendre d'un WHERE mal
+// formé qui renverrait silencieusement 0 résultat.
+async function fetchPashMirror(url, xmin, ymin, xmax, ymax){
   const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
   let offset = 0; const pageSize = 2000; let all = [];
-  while(true){
-    const data = await fetchJson(PASH_URL, {
-      geometry, geometryType: "esriGeometryEnvelope", inSR: "31370",
-      spatialRel: "esriSpatialRelIntersects",
-      outFields: "PASHCODE", returnGeometry: "true", outSR: "31370",
-      resultRecordCount: pageSize, resultOffset: offset, f: "json"
-    });
-    const feats = data.features || [];
-    all = all.concat(feats);
-    if(feats.length < pageSize) break;
-    offset += pageSize;
-    if(offset > 40000) break;
+  try{
+    while(true){
+      const data = await fetchJsonWithJsonpFallback(url, {
+        geometry, geometryType: "esriGeometryEnvelope", inSR: "31370",
+        spatialRel: "esriSpatialRelIntersects",
+        // On demande les deux schémas connus (régime actuel "pashcode" + son complément
+        // "pdsaffectcode" pour la distinction "hors zone urbanisable", et le régime initial
+        // "pashcodemb" / "pcgecode" en repli) : la casse du nom de champ n'a pas d'importance pour
+        // la requête elle-même (résolue côté serveur), seule la lecture de la réponse doit se
+        // faire via getAttrCI() (voir pashCodeToCol) pour ne pas dépendre de la casse exacte.
+        outFields: "pashcode,pdsaffectcode,pashcodemb,pcgecode", returnGeometry: "true", outSR: "31370",
+        resultRecordCount: pageSize, resultOffset: offset, f: "json"
+      });
+      const feats = data.features || [];
+      all = all.concat(feats);
+      if(feats.length < pageSize) break;
+      offset += pageSize;
+      if(offset > 40000) break;
+    }
+    return { url, features: all, error: null };
+  }catch(e){
+    return { url, features: all, error: e.message };
   }
-  return all;
+}
+
+// Interroge les deux miroirs PASH connus EN PARALLÈLE (voir PASH_MIRRORS) et garde le premier qui
+// répond avec des géométries non vides ; si les deux répondent vide/en erreur, renvoie quand même
+// un diagnostic détaillé (compte par miroir + message d'erreur) que runPds() peut afficher dans le
+// statut, au lieu de basculer silencieusement toutes les colonnes BG-BJ à "N".
+async function fetchAssainissementInEnvelope(xmin, ymin, xmax, ymax){
+  const results = await Promise.all(
+    PASH_MIRRORS.map(url => fetchPashMirror(url, xmin, ymin, xmax, ymax))
+  );
+  let best = results[0];
+  for(const r of results){
+    if(r.features.length > best.features.length) best = r;
+  }
+  const diagnostic = results.map(r =>
+    (new URL(r.url)).hostname + ": " + r.features.length + " zone(s)" + (r.error ? " (erreur: " + r.error + ")" : "")
+  ).join(" ; ");
+  if(best.features.length === 0){
+    throw new Error("aucune zone PASH reçue — " + diagnostic);
+  }
+  return { features: best.features, diagnostic };
 }
 
 function emptyPdsRow(){
@@ -1075,95 +1571,395 @@ async function runPds(){
     const xmin = Math.min(...xs)-MARGIN, xmax = Math.max(...xs)+MARGIN;
     const ymin = Math.min(...ys)-MARGIN, ymax = Math.max(...ys)+MARGIN;
 
-    setStatus(status2El, "Récupération des zones d'affectation (couche 22)…");
-    const zones = await fetchPdsLayerInEnvelope(22, xmin, ymin, xmax, ymax, "AFFECT");
-    progressBar2.style.width = "10%";
-
+    // --- Toutes les couches ci-dessous sont interrogées EN PARALLÈLE plutôt que les unes après
+    // les autres. Dans la version précédente, une quarantaine de requêtes réseau s'enchaînaient
+    // séquentiellement (chacune pouvant prendre de quelques centaines de ms à plusieurs secondes,
+    // voire jusqu'au timeout de 25s en cas de service lent), ce qui rendait l'étape 2 très lente
+    // sur le total. Comme ces couches sont toutes indépendantes les unes des autres (services
+    // différents, aucune ne dépend du résultat d'une autre), les lancer simultanément ramène le
+    // temps total au temps du plus lent des appels au lieu de la somme de tous les appels — gain
+    // typique de 5 à 15x selon le nombre de couches réellement présentes sur la zone. Chaque tâche
+    // garde EXACTEMENT son propre try/catch et son propre message d'avertissement (donc le même
+    // comportement de tolérance de panne qu'avant, colonne par colonne) ; seule la façon dont
+    // elles sont ORDONNANCÉES change.
+    let zones = [];
     const perimGeoms = {};
-    let li = 0;
-    for(const layer of PERIMETRE_LAYERS){
-      setStatus(status2El, `Récupération périmètre "${layer.label}" (couche ${layer.id})…`);
-      perimGeoms[layer.id] = await fetchPdsLayerInEnvelope(layer.id, xmin, ymin, xmax, ymax, "OBJECTID");
-      li++;
-      progressBar2.style.width = Math.round(10 + (li/PERIMETRE_LAYERS.length)*25) + "%";
-      await yieldToUI();
-    }
-
-    // Zone de recul (AC) / zone d'accès et de stationnement (AD) : prescriptions ponctuelles.
-    // Champ texte non garanti identique entre les deux couches -> outFields="*" et recherche de
-    // mot-clé sur tous les champs (voir featureMatchesKeyword). Isolé dans son propre try/catch :
-    // si ça échoue, AC/AD restent à N mais le reste de l'enrichissement continue normalement.
-    let reculStationFeats = [];
-    let reculStationOk = true;
-    try{
-      setStatus(status2El, "Récupération des prescriptions (zone de recul / accès et stationnement)…");
-      for(const layerId of RECUL_STATIONNEMENT_LAYERS){
-        const feats = await fetchPdsLayerInEnvelope(layerId, xmin, ymin, xmax, ymax, "*");
-        reculStationFeats = reculStationFeats.concat(feats);
-      }
-    }catch(e){
-      reculStationOk = false;
-      setStatus(status2El, "Prescriptions recul/stationnement non récupérées (" + e.message + ") — AC/AD laissées à N.", "warn");
-    }
-    progressBar2.style.width = "38%";
-
-    // SDC / SSC (AO + lien AP) et SOL (AQ) — même domaine que le PDS, pas de souci CORS attendu.
-    let sdcFeats = [], solFeats = [];
-    let sdcSolOk = true;
-    try{
-      setStatus(status2El, "Récupération des Schémas de Développement Communaux (SDC) et anciens Schémas de Structure Communaux (SSC)…");
-      for(const layerId of SDC_LAYERS){
-        const feats = await fetchArcgisLayerInEnvelope(SDC_BASE, layerId, xmin, ymin, xmax, ymax, "NATURE,LIENDOC");
-        sdcFeats = sdcFeats.concat(feats.map(f => ({ ...f, _layerId: layerId })));
-      }
-      progressBar2.style.width = "45%";
-      setStatus(status2El, "Récupération des Schémas d'Orientation Locaux (SOL)…");
-      solFeats = await fetchArcgisLayerInEnvelope(SOL_BASE, SOL_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
-    }catch(e){
-      sdcSolOk = false;
-      setStatus(status2El, "SDC/SOL non récupérés (" + e.message + ") — AO/AP/AQ laissées à N ou /.", "warn");
-    }
-    progressBar2.style.width = "50%";
-
-    // GRU (AR, AS, AT) et GCU (AU) — même domaine que le PDS.
-    let gruZpuFeats = [], gruRgbsrFeats = [], gruAcousFeats = [], gcuFeats = [];
-    let gruGcuOk = true;
-    try{
-      setStatus(status2El, "Récupération du Guide Régional d'Urbanisme (zones protégées, RGBSR, qualité acoustique)…");
-      gruZpuFeats = await fetchArcgisLayerInEnvelope(GRU_BASE, GRU_ZPU_LAYER, xmin, ymin, xmax, ymax, "LIENDOC");
-      gruRgbsrFeats = await fetchArcgisLayerInEnvelope(GRU_BASE, GRU_RGBSR_LAYER, xmin, ymin, xmax, ymax, "LIENDOC");
-      gruAcousFeats = await fetchArcgisLayerInEnvelope(GRU_BASE, GRU_ACOUS_LAYER, xmin, ymin, xmax, ymax, "LIENDOC");
-      progressBar2.style.width = "58%";
-      setStatus(status2El, "Récupération du Guide Communal d'Urbanisme (GCU) et anciens règlements communaux (RCB/RCU)…");
-      for(const layerId of GCU_LAYERS){
-        const feats = await fetchArcgisLayerInEnvelope(GCU_BASE, layerId, xmin, ymin, xmax, ymax, "OBJECTID");
-        gcuFeats = gcuFeats.concat(feats);
-      }
-    }catch(e){
-      gruGcuOk = false;
-      setStatus(status2El, "GRU/GCU non récupérés (" + e.message + ") — AR/AS/AT/AU laissées à N.", "warn");
-    }
-    progressBar2.style.width = "63%";
-
-    setStatus(status2El, "Récupération des zones de protection des captages…");
+    let reculStationFeats = [], reculStationOk = true;
+    let sdcFeats = [], solFeats = [], sdcSolOk = true;
+    let gruZpuFeats = [], gruRgbsrFeats = [], gruAcousFeats = [], gcuFeats = [], gruGcuOk = true;
+    let aleaFeats = [], diffusFeats = [], lidaxesFeats = [], aleaOk = true;
     const captGeoms = {};
-    for(const layer of CAPT_LAYERS){
-      captGeoms[layer.id] = await fetchCaptLayerInEnvelope(layer.id, xmin, ymin, xmax, ymax, "OBJECTID");
-      await yieldToUI();
-    }
-    const captForfait = await fetchCaptLayerInEnvelope(CAPT_FORFAIT_LAYER.id, xmin, ymin, xmax, ymax, "TYPE_CODE");
-    progressBar2.style.width = "70%";
+    let captForfait = [];
+    let assainFeats = [], assainOk = true, assainDiagnostic = "";
+    let cawFeats = [], cawOk = true;
+    let ipicFeats = [], ipicOk = true;
+    let patMndFeats = [], patMndOk = true;
+    let bcPatFeats = [], bcPatOk = true;
+    let patLstsavFeats = [], patLstsavOk = true;
+    let patExcFeats = [], patExcOk = true;
+    let lotFeats = [], lotOk = true;
+    let planhpFeats = [], planhpOk = true;
+    let rmbmtFeats = [], rmbmtOk = true;
+    let sarFeats = [], sarOk = true;
+    let sevesoFeats = [], sevesoOk = true;
+    let renovFeats = [], renovOk = true;
+    let revitFeats = [], revitOk = true;
+    let preFeats = [], preOk = true;
+    let tnuFeats = [], tnuOk = true;
+    let terrilsFeats = [], terrilsOk = true;
+    const isaFeatsByCol = {}, isaOkByCol = {};
+    let zipFeats = [], zipOk = true;
+    let erosionFeats = [], erosionOk = true;
+    let ahremFeats = [], ahremOk = true;
+    let natura2000Feats = [], natura2000Ok = true;
+    let foretFeats = [], foretOk = true;
+    let pprFeats = [], pprOk = true;
 
-    let assainFeats = [];
-    let assainOk = true;
-    try{
-      setStatus(status2El, "Récupération du régime d'assainissement (PASH — sig.spge.be)…");
-      assainFeats = await fetchAssainissementInEnvelope(xmin, ymin, xmax, ymax);
-    }catch(e){
-      assainOk = false;
-      setStatus(status2El, "Régime d'assainissement (PASH) non récupéré (probablement bloqué par CORS depuis ce domaine) — colonnes BG à BJ laissées à N. Détail : " + e.message, "warn");
+    let tasksDone = 0;
+    let tasksTotal = 0;
+    function taskProgress(){
+      tasksDone++;
+      progressBar2.style.width = Math.round(4 + (tasksDone / tasksTotal) * 74) + "%";
     }
-    progressBar2.style.width = "76%";
+
+    const tasks = [
+      async () => {
+        zones = await fetchPdsLayerInEnvelope(22, xmin, ymin, xmax, ymax, "AFFECT");
+        taskProgress();
+      },
+      async () => {
+        for(const layer of PERIMETRE_LAYERS){
+          perimGeoms[layer.id] = await fetchPdsLayerInEnvelope(layer.id, xmin, ymin, xmax, ymax, "OBJECTID");
+        }
+        taskProgress();
+      },
+      // Zone de recul (AC) / zone d'accès et de stationnement (AD) : prescriptions ponctuelles.
+      async () => {
+        try{
+          for(const layerId of RECUL_STATIONNEMENT_LAYERS){
+            const feats = await fetchPdsLayerInEnvelope(layerId, xmin, ymin, xmax, ymax, "*");
+            reculStationFeats = reculStationFeats.concat(feats);
+          }
+        }catch(e){
+          reculStationOk = false;
+          setStatus(status2El, "Prescriptions recul/stationnement non récupérées (" + e.message + ") — AC/AD laissées à N.", "warn");
+        }
+        taskProgress();
+      },
+      // SDC / SSC (AO + lien AP) et SOL (AQ) — même domaine que le PDS, pas de souci CORS attendu.
+      async () => {
+        try{
+          for(const layerId of SDC_LAYERS){
+            const feats = await fetchArcgisLayerInEnvelope(SDC_BASE, layerId, xmin, ymin, xmax, ymax, "NATURE,LIENDOC");
+            sdcFeats = sdcFeats.concat(feats.map(f => ({ ...f, _layerId: layerId })));
+          }
+          solFeats = await fetchArcgisLayerInEnvelope(SOL_BASE, SOL_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          sdcSolOk = false;
+          setStatus(status2El, "SDC/SOL non récupérés (" + e.message + ") — AO/AP/AQ laissées à N ou /.", "warn");
+        }
+        taskProgress();
+      },
+      // GRU (AR, AS, AT + liens CU, CV, CW) et GCU (AU + lien CX) — même domaine que le PDS.
+      // LIENDOC est demandé dès cette requête pour éviter un second aller-retour dédié aux
+      // colonnes CU-CX : le lien (s'il existe) est repris de la même géométrie que celle qui a
+      // déjà servi à déterminer AR/AS/AT/AU.
+      async () => {
+        try{
+          gruZpuFeats = await fetchArcgisLayerInEnvelope(GRU_BASE, GRU_ZPU_LAYER, xmin, ymin, xmax, ymax, "LIENDOC");
+          gruRgbsrFeats = await fetchArcgisLayerInEnvelope(GRU_BASE, GRU_RGBSR_LAYER, xmin, ymin, xmax, ymax, "LIENDOC");
+          gruAcousFeats = await fetchArcgisLayerInEnvelope(GRU_BASE, GRU_ACOUS_LAYER, xmin, ymin, xmax, ymax, "LIENDOC");
+          for(const layerId of GCU_LAYERS){
+            const feats = await fetchArcgisLayerInEnvelope(GCU_BASE, layerId, xmin, ymin, xmax, ymax, "LIENDOC");
+            gcuFeats = gcuFeats.concat(feats);
+          }
+        }catch(e){
+          gruGcuOk = false;
+          setStatus(status2El, "GRU/GCU non récupérés (" + e.message + ") — AR/AS/AT/AU et CU-CX laissées à N ou /.", "warn");
+        }
+        taskProgress();
+      },
+      // Aléa d'inondation (AW-AY) + ruissellement diffus (AZ) + axes de concentration (BA).
+      // AV (aléa très faible) n'a pas de source fiable identifiée : reste à N (voir commentaire
+      // plus haut, dans la définition de ALEA_INOND_BASE).
+      async () => {
+        try{
+          aleaFeats = await fetchArcgisLayerInEnvelope(ALEA_INOND_BASE, ALEA_INOND_LAYER, xmin, ymin, xmax, ymax, "CLASSEMENT");
+          diffusFeats = await fetchArcgisLayerInEnvelope(ERRUISSOL_DIFFUS_BASE, ERRUISSOL_DIFFUS_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+          lidaxesFeats = await fetchArcgisLayerInEnvelope(LIDAXES_BASE, LIDAXES_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          aleaOk = false;
+          setStatus(status2El, "Aléa d'inondation / ruissellement non récupéré (" + e.message + ") — AV-BA laissées à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        for(const layer of CAPT_LAYERS){
+          captGeoms[layer.id] = await fetchCaptLayerInEnvelope(layer.id, xmin, ymin, xmax, ymax, "OBJECTID");
+        }
+        captForfait = await fetchCaptLayerInEnvelope(CAPT_FORFAIT_LAYER.id, xmin, ymin, xmax, ymax, "TYPE_CODE");
+        taskProgress();
+      },
+      async () => {
+        try{
+          const res = await fetchAssainissementInEnvelope(xmin, ymin, xmax, ymax);
+          assainFeats = res.features;
+          assainDiagnostic = res.diagnostic;
+        }catch(e){
+          assainOk = false;
+          assainDiagnostic = e.message;
+          setStatus(status2El, "Régime d'assainissement (PASH) non récupéré sur aucun des deux miroirs, même après repli JSONP (" + e.message + ") — colonnes BG à BJ laissées à N.", "warn");
+        }
+        taskProgress();
+      },
+      // --- Patrimoine (BK à BP) — six services indépendants, chacun sa propre tâche/try-catch :
+      // qu'une panne isolée (service AWaP indisponible, couche renommée, etc.) ne prive que sa
+      // propre colonne et n'efface jamais les colonnes Patrimoine déjà obtenues avec succès.
+      async () => {
+        try{
+          cawFeats = await fetchArcgisLayerInEnvelope(CAW_BASE, CAW_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          cawOk = false;
+          setStatus(status2El, "Carte archéologique (CAW) non récupérée (" + e.message + ") — BK laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          ipicFeats = await fetchArcgisLayerInEnvelope(IPIC_BASE, IPIC_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          ipicOk = false;
+          setStatus(status2El, "Inventaire du patrimoine immobilier culturel (IPIC) non récupéré (" + e.message + ") — BL laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          patMndFeats = await fetchArcgisLayerInEnvelope(PAT_MND_BASE, PAT_MND_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          patMndOk = false;
+          setStatus(status2El, "Biens du patrimoine mondial non récupérés (" + e.message + ") — BM laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          for(const layerId of BC_PAT_LAYERS){
+            const feats = await fetchArcgisLayerInEnvelope(BC_PAT_BASE, layerId, xmin, ymin, xmax, ymax, "OBJECTID");
+            bcPatFeats = bcPatFeats.concat(feats);
+          }
+        }catch(e){
+          bcPatOk = false;
+          setStatus(status2El, "Biens classés / zones de protection (BC_PAT) non récupérés (" + e.message + ") — BN laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          patLstsavFeats = await fetchArcgisLayersTolerant(PAT_LSTSAV_BASE, PAT_LSTSAV_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          patLstsavOk = false;
+          setStatus(status2El, "Biens en liste de sauvegarde non récupérés (" + e.message + ") — BO laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          patExcFeats = await fetchArcgisLayerInEnvelope(PAT_EXC_BASE, PAT_EXC_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          patExcOk = false;
+          setStatus(status2El, "Biens exceptionnels non récupérés (" + e.message + ") — BP laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      // --- Urbanisme opérationnel & risques industriels (BQ à BY) — même logique de panne
+      // isolée que le bloc Patrimoine : chaque service a sa propre tâche/try-catch, une couche
+      // absente ne prive que sa colonne des colonnes déjà obtenues avec succès.
+      async () => {
+        try{
+          lotFeats = await fetchArcgisLayersTolerant(LOT_BASE, LOT_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          lotOk = false;
+          setStatus(status2El, "Permis d'urbanisation (LOT) non récupérés (" + e.message + ") — BQ laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          planhpFeats = await fetchArcgisLayersTolerant(PLANHP_BASE, PLANHP_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          planhpOk = false;
+          setStatus(status2El, "Plan Habitat Permanent non récupéré (" + e.message + ") — BR laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          rmbmtFeats = await fetchArcgisLayersTolerant(RMBMT_URB_BASE, RMBMT_URB_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          rmbmtOk = false;
+          setStatus(status2El, "Périmètres de remembrement urbain non récupérés (" + e.message + ") — BS laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          sarFeats = await fetchArcgisLayersTolerant(SAR_BASE, SAR_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          sarOk = false;
+          setStatus(status2El, "Sites à réaménager de droit (SAR) non récupérés (" + e.message + ") — BT laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          sevesoFeats = await fetchArcgisLayersTolerant(SEVESO_BASE, SEVESO_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          sevesoOk = false;
+          setStatus(status2El, "Sites SEVESO non récupérés (" + e.message + ") — BU laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          renovFeats = await fetchArcgisLayersTolerant(RENOV_URB_BASE, RENOV_URB_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          renovOk = false;
+          setStatus(status2El, "Rénovation urbaine non récupérée (" + e.message + ") — BV laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          revitFeats = await fetchArcgisLayersTolerant(REVIT_URB_BASE, REVIT_URB_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          revitOk = false;
+          setStatus(status2El, "Revitalisation urbaine non récupérée (" + e.message + ") — BW laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          preFeats = await fetchArcgisLayersTolerant(PRE_BASE, PRE_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          preOk = false;
+          setStatus(status2El, "Périmètres de reconnaissance économique non récupérés (" + e.message + ") — BX laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      async () => {
+        try{
+          tnuFeats = await fetchArcgisLayerInEnvelope(TNU_BASE, TNU_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          tnuOk = false;
+          setStatus(status2El, "Terrains non urbanisés (TNU) non récupérés (" + e.message + ") — BY laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      // --- Terrils (BZ-CA) : couche unique, champ MAJEUR ("Oui"/"Non") lu directement à
+      // l'attribution plutôt que pré-filtré ici, pour ne perdre aucune géométrie en cas de valeur
+      // inattendue (espace, casse) dans le champ.
+      async () => {
+        try{
+          terrilsFeats = await fetchArcgisLayerInEnvelope(TERRILS_BASE, TERRILS_LAYER, xmin, ymin, xmax, ymax, "MAJEUR");
+        }catch(e){
+          terrilsOk = false;
+          setStatus(status2El, "Terrils non récupérés (" + e.message + ") — BZ/CA laissées à N.", "warn");
+        }
+        taskProgress();
+      },
+      // --- Inventaire des sites à réaménager (ISA, CB à CF) : 5 couches, chacune sa propre
+      // tâche/try-catch (échec isolé d'une couche = seule sa colonne reste à N).
+      ...ISA_LAYERS.map(layer => async () => {
+        try{
+          isaFeatsByCol[layer.col] = await fetchArcgisLayerInEnvelope(ISA_BASE, layer.id, xmin, ymin, xmax, ymax, "OBJECTID");
+          isaOkByCol[layer.col] = true;
+        }catch(e){
+          isaFeatsByCol[layer.col] = [];
+          isaOkByCol[layer.col] = false;
+          setStatus(status2El, `ISA — "${layer.label}" non récupérée (${e.message}) — ${layer.col} laissée à N.`, "warn");
+        }
+        taskProgress();
+      }),
+      // --- Zone d'initiative privilégiée (CG)
+      async () => {
+        try{
+          zipFeats = await fetchArcgisLayerInEnvelope(ZIP_BASE, ZIP_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          zipOk = false;
+          setStatus(status2El, "Zones d'initiative privilégiée non récupérées (" + e.message + ") — CG laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      // --- Risque d'érosion hydrique diffuse (CH) — service ERRUISSOL distinct de celui utilisé
+      // pour AZ (risque de ruissellement diffus) : ne pas confondre les deux. Les 3 couches
+      // candidates (une par occupation du sol) sont interrogées et combinées en OU logique — voir
+      // le commentaire détaillé au niveau de EROSION_DIFFUSE_CANDIDATE_LAYERS plus haut.
+      async () => {
+        try{
+          erosionFeats = await fetchArcgisLayersTolerant(EROSION_DIFFUSE_BASE, EROSION_DIFFUSE_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          erosionOk = false;
+          setStatus(status2El, "Risque d'érosion hydrique diffuse non récupéré (" + e.message + ") — CH laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      // --- Arbres et haies remarquables (CI) — série à couches candidates (mode tolérant)
+      async () => {
+        try{
+          ahremFeats = await fetchArcgisLayersTolerant(AHREM_BASE, AHREM_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          ahremOk = false;
+          setStatus(status2El, "Arbres et haies remarquables non récupérés (" + e.message + ") — CI laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      // --- Réseau Natura 2000 (CJ)
+      async () => {
+        try{
+          natura2000Feats = await fetchArcgisLayerInEnvelope(NATURA2000_BASE, NATURA2000_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          natura2000Ok = false;
+          setStatus(status2El, "Réseau Natura 2000 non récupéré (" + e.message + ") — CJ laissée à N.", "warn");
+        }
+        taskProgress();
+      },
+      // --- Masque forestier (CK) — service RASTER : une requête vectorielle standard peut ne
+      // renvoyer aucune géométrie même si la parcelle est en forêt (comportement normal d'un
+      // raster). On tente quand même la requête par enveloppe ; en cas d'échec ou de réponse
+      // vide, CK reste à N avec un avertissement explicite plutôt que de deviner.
+      async () => {
+        try{
+          foretFeats = await fetchArcgisLayerInEnvelope(FORET_BASE, FORET_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          foretOk = false;
+          setStatus(status2El, "Masque forestier non récupéré en mode vecteur (" + e.message + ") — CK laissée à N (service raster, à vérifier manuellement sur WalOnMap si nécessaire).", "warn");
+        }
+        taskProgress();
+      },
+      // --- Périmètre de préemption en aménagement du territoire (CM)
+      async () => {
+        try{
+          pprFeats = await fetchArcgisLayerInEnvelope(PPR_BASE, PPR_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+        }catch(e){
+          pprOk = false;
+          setStatus(status2El, "Périmètres de préemption non récupérés (" + e.message + ") — CM laissée à N.", "warn");
+        }
+        taskProgress();
+      }
+    ];
+    tasksTotal = tasks.length;
+    // CORRECTIF IMPORTANT : lancer les ~30 tâches en une seule fois via Promise.all (comme dans
+    // la version précédente) sature la limite de connexions simultanées par domaine du navigateur
+    // ET peut déclencher un throttling côté serveur ArcGIS, ce qui provoquait des échecs (timeout)
+    // sur des services pourtant disponibles — visible dans le statut final sous forme de plusieurs
+    // "non disponible" qui n'auraient pas dû l'être. On garde le bénéfice du parallélisme (gain de
+    // vitesse important par rapport à un enchaînement strictement séquentiel) tout en le bornant à
+    // TASK_CONCURRENCY requêtes de front simultanées, via le même utilitaire mapLimit que celui
+    // déjà utilisé pour les adresses et les rues.
+    setStatus(status2El, `Récupération de ${tasksTotal} couches de données (plan de secteur, SDC/SOL, GRU/GCU, aléa inondation, captages, assainissement, patrimoine, urbanisme opérationnel, terrils, ISA, environnement, préemption), ${TASK_CONCURRENCY} maximum en simultané…`);
+    await mapLimit(tasks, TASK_CONCURRENCY, (fn) => fn());
+    progressBar2.style.width = "78%";
 
     setStatus(status2El, "Attribution des zones et périmètres à chaque ligne…");
     let done = 0;
@@ -1171,7 +1967,7 @@ async function runPds(){
       const pds = emptyPdsRow();
       if(typeof row._x === "number" && typeof row._y === "number"){
         for(const z of zones){
-          if(z.geometry && z.geometry.rings && pointInRings(row._x, row._y, z.geometry.rings)){
+          if(ringsHitPoint(z, row._x, row._y)){
             const col = AFFECT_TO_COL[z.attributes.AFFECT];
             if(col){ pds[col] = "O"; }
             break;
@@ -1180,7 +1976,7 @@ async function runPds(){
         for(const layer of PERIMETRE_LAYERS){
           const feats = perimGeoms[layer.id];
           for(const f of feats){
-            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+            if(ringsHitPoint(f, row._x, row._y)){
               pds[layer.col] = "O";
               break;
             }
@@ -1192,12 +1988,11 @@ async function runPds(){
             if(!f.geometry) continue;
             let hit = false;
             if(f.geometry.rings){
-              hit = pointInRings(row._x, row._y, f.geometry.rings);
+              hit = ringsHitPoint(f, row._x, row._y);
             } else if(typeof f.geometry.x === "number"){
               hit = Math.hypot(row._x - f.geometry.x, row._y - f.geometry.y) <= RS_MARGIN;
             }
             if(!hit) continue;
-            const norm = {};
             const attrs = f.attributes || {};
             let matchedRecul = false, matchedStation = false;
             for(const k in attrs){
@@ -1217,7 +2012,7 @@ async function runPds(){
         if(sdcSolOk){
           let sdcHit = null;
           for(const f of sdcFeats){
-            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+            if(ringsHitPoint(f, row._x, row._y)){
               if(!sdcHit || (f._layerId === 0 && sdcHit._layerId !== 0)) sdcHit = f;
             }
           }
@@ -1229,53 +2024,85 @@ async function runPds(){
 
           // --- SOL (AQ)
           for(const f of solFeats){
-            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+            if(ringsHitPoint(f, row._x, row._y)){
               pds["AQ"] = "O";
               break;
             }
           }
         }
 
-        // --- GRU : zones protégées en matière d'urbanisme (AR), règlement sur les bâtisses en
-        // site rural (AS), qualité acoustique des constructions (AT) — et GCU (AU).
+        // --- GRU : zones protégées en matière d'urbanisme (AR + lien CU), règlement sur les
+        // bâtisses en site rural (AS + lien CV), qualité acoustique des constructions (AT + lien
+        // CW) — et GCU (AU + lien CX). Le lien retenu est celui de la première géométrie touchée
+        // qui possède un LIENDOC non vide.
         if(gruGcuOk){
           for(const f of gruZpuFeats){
-            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+            if(ringsHitPoint(f, row._x, row._y)){
               pds["AR"] = "O";
+              const lien = f.attributes && f.attributes.LIENDOC;
+              if(lien && String(lien).trim()) pds["CU"] = lien;
               break;
             }
           }
           for(const f of gruRgbsrFeats){
-            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+            if(ringsHitPoint(f, row._x, row._y)){
               pds["AS"] = "O";
+              const lien = f.attributes && f.attributes.LIENDOC;
+              if(lien && String(lien).trim()) pds["CV"] = lien;
               break;
             }
           }
           for(const f of gruAcousFeats){
-            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+            if(ringsHitPoint(f, row._x, row._y)){
               pds["AT"] = "O";
+              const lien = f.attributes && f.attributes.LIENDOC;
+              if(lien && String(lien).trim()) pds["CW"] = lien;
               break;
             }
           }
           for(const f of gcuFeats){
-            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+            if(ringsHitPoint(f, row._x, row._y)){
               pds["AU"] = "O";
+              const lien = f.attributes && f.attributes.LIENDOC;
+              if(lien && String(lien).trim()) pds["CX"] = lien;
               break;
             }
+          }
+        }
+
+        // --- Aléa d'inondation (AW-AY) via CLASSEMENT, ruissellement diffus (AZ), axe de
+        // concentration du ruissellement (BA, avec tolérance de proximité car couche linéaire).
+        if(aleaOk){
+          for(const f of aleaFeats){
+            if(ringsHitPoint(f, row._x, row._y)){
+              const col = ALEA_CLASSEMENT_TO_COL[f.attributes.CLASSEMENT];
+              if(col){ pds[col] = "O"; break; }
+            }
+          }
+          for(const f of diffusFeats){
+            if(ringsHitPoint(f, row._x, row._y)){
+              pds["AZ"] = "O";
+              break;
+            }
+          }
+          for(const f of lidaxesFeats){
+            if(!f.geometry || !f.geometry.paths) continue;
+            const d = distPointToPaths(row._x, row._y, f.geometry.paths);
+            if(d <= AXE_RUISSELLEMENT_MARGIN){ pds["BA"] = "O"; break; }
           }
         }
 
         for(const layer of CAPT_LAYERS){
           const feats = captGeoms[layer.id];
           for(const f of feats){
-            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+            if(ringsHitPoint(f, row._x, row._y)){
               pds[layer.col] = "O";
               break;
             }
           }
         }
         for(const f of captForfait){
-          if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
+          if(ringsHitPoint(f, row._x, row._y)){
             const t = (f.attributes.TYPE_CODE || "").toUpperCase();
             if(t === "IIA") pds["BF"] = "O";
             else if(t === "IIB") pds["BE"] = "O";
@@ -1284,30 +2111,197 @@ async function runPds(){
         }
         if(assainOk){
           for(const f of assainFeats){
-            if(f.geometry && f.geometry.rings && pointInRings(row._x, row._y, f.geometry.rings)){
-              const col = pashCodeToCol(f.attributes.PASHCODE);
+            if(ringsHitPoint(f, row._x, row._y)){
+              const col = pashCodeToCol(f.attributes);
               if(col) pds[col] = "O";
               break;
             }
+          }
+        }
+
+        // --- Patrimoine (BK à BP). geometryHitsPoint() gère aussi bien les couches polygonales
+        // (rings, test exact) que les couches ponctuelles (x/y + tolérance PATRIMOINE_POINT_MARGIN,
+        // ex. BC_PAT couche 0 "Monuments classés").
+        if(cawOk){
+          for(const f of cawFeats){
+            if(geometryHitsPoint(f, row._x, row._y, PATRIMOINE_POINT_MARGIN)){ pds["BK"] = "O"; break; }
+          }
+        }
+        if(ipicOk){
+          for(const f of ipicFeats){
+            if(geometryHitsPoint(f, row._x, row._y, PATRIMOINE_POINT_MARGIN)){ pds["BL"] = "O"; break; }
+          }
+        }
+        if(patMndOk){
+          for(const f of patMndFeats){
+            if(geometryHitsPoint(f, row._x, row._y, PATRIMOINE_POINT_MARGIN)){ pds["BM"] = "O"; break; }
+          }
+        }
+        if(bcPatOk){
+          for(const f of bcPatFeats){
+            if(geometryHitsPoint(f, row._x, row._y, PATRIMOINE_POINT_MARGIN)){ pds["BN"] = "O"; break; }
+          }
+        }
+        if(patLstsavOk){
+          for(const f of patLstsavFeats){
+            if(geometryHitsPoint(f, row._x, row._y, PATRIMOINE_POINT_MARGIN)){ pds["BO"] = "O"; break; }
+          }
+        }
+        if(patExcOk){
+          for(const f of patExcFeats){
+            if(geometryHitsPoint(f, row._x, row._y, PATRIMOINE_POINT_MARGIN)){ pds["BP"] = "O"; break; }
+          }
+        }
+
+        // --- Urbanisme opérationnel & risques industriels (BQ à BY).
+        if(lotOk){
+          for(const f of lotFeats){
+            if(geometryHitsPoint(f, row._x, row._y, URB_OP_POINT_MARGIN)){ pds["BQ"] = "O"; break; }
+          }
+        }
+        if(planhpOk){
+          for(const f of planhpFeats){
+            if(geometryHitsPoint(f, row._x, row._y, URB_OP_POINT_MARGIN)){ pds["BR"] = "O"; break; }
+          }
+        }
+        if(rmbmtOk){
+          for(const f of rmbmtFeats){
+            if(geometryHitsPoint(f, row._x, row._y, URB_OP_POINT_MARGIN)){ pds["BS"] = "O"; break; }
+          }
+        }
+        if(sarOk){
+          for(const f of sarFeats){
+            if(geometryHitsPoint(f, row._x, row._y, URB_OP_POINT_MARGIN)){ pds["BT"] = "O"; break; }
+          }
+        }
+        if(sevesoOk){
+          for(const f of sevesoFeats){
+            if(geometryHitsPoint(f, row._x, row._y, URB_OP_POINT_MARGIN)){ pds["BU"] = "O"; break; }
+          }
+        }
+        if(renovOk){
+          for(const f of renovFeats){
+            if(geometryHitsPoint(f, row._x, row._y, URB_OP_POINT_MARGIN)){ pds["BV"] = "O"; break; }
+          }
+        }
+        if(revitOk){
+          for(const f of revitFeats){
+            if(geometryHitsPoint(f, row._x, row._y, URB_OP_POINT_MARGIN)){ pds["BW"] = "O"; break; }
+          }
+        }
+        if(preOk){
+          for(const f of preFeats){
+            if(geometryHitsPoint(f, row._x, row._y, URB_OP_POINT_MARGIN)){ pds["BX"] = "O"; break; }
+          }
+        }
+        if(tnuOk){
+          for(const f of tnuFeats){
+            if(geometryHitsPoint(f, row._x, row._y, URB_OP_POINT_MARGIN)){ pds["BY"] = "O"; break; }
+          }
+        }
+
+        // --- Terrils (BZ/CA), attribués selon le champ MAJEUR ("Non" -> BZ, "Oui" -> CA).
+        if(terrilsOk){
+          for(const f of terrilsFeats){
+            if(geometryHitsPoint(f, row._x, row._y, 0)){
+              const m = (f.attributes && f.attributes.MAJEUR ? String(f.attributes.MAJEUR) : "").trim().toUpperCase();
+              if(m === "OUI") pds["CA"] = "O";
+              else if(m === "NON") pds["BZ"] = "O";
+              break;
+            }
+          }
+        }
+
+        // --- Inventaire des sites à réaménager (ISA, CB à CF) : chaque couche est indépendante.
+        for(const layer of ISA_LAYERS){
+          if(!isaOkByCol[layer.col]) continue;
+          for(const f of isaFeatsByCol[layer.col]){
+            if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds[layer.col] = "O"; break; }
+          }
+        }
+
+        // --- Zone d'initiative privilégiée (CG)
+        if(zipOk){
+          for(const f of zipFeats){
+            if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds["CG"] = "O"; break; }
+          }
+        }
+        // --- Risque d'érosion hydrique diffuse (CH) — erosionFeats contient déjà les features des
+        // 3 couches (prairie / culture non sarclée / culture sarclée) concaténées : dès qu'une
+        // géométrie de N'IMPORTE LAQUELLE des 3 touche le point, CH = "O" (OU logique).
+        if(erosionOk){
+          for(const f of erosionFeats){
+            if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds["CH"] = "O"; break; }
+          }
+        }
+        // --- Arbres et haies remarquables (CI)
+        if(ahremOk){
+          for(const f of ahremFeats){
+            if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds["CI"] = "O"; break; }
+          }
+        }
+        // --- Réseau Natura 2000 (CJ)
+        if(natura2000Ok){
+          for(const f of natura2000Feats){
+            if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds["CJ"] = "O"; break; }
+          }
+        }
+        // --- Masque forestier (CK) — meilleur effort (service raster, voir commentaire plus haut)
+        if(foretOk){
+          for(const f of foretFeats){
+            if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds["CK"] = "O"; break; }
+          }
+        }
+        // --- Périmètre de préemption (CM)
+        if(pprOk){
+          for(const f of pprFeats){
+            if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds["CM"] = "O"; break; }
           }
         }
       }
       row.pds = pds;
       done++;
       if(done % 100 === 0){
-        progressBar2.style.width = Math.round(76 + (done/lastRows.length)*24) + "%";
+        progressBar2.style.width = Math.round(78 + (done/lastRows.length)*22) + "%";
         await yieldToUI();
       }
     }
     progressBar2.style.width = "100%";
     pdsComplete = true;
     const notes = [];
-    if(!assainOk) notes.push("assainissement non disponible — CORS");
+    if(assainDiagnostic) notes.push("PASH — " + assainDiagnostic);
     if(!sdcSolOk) notes.push("SDC/SOL non disponibles");
     if(!gruGcuOk) notes.push("GRU/GCU non disponibles");
+    if(!aleaOk) notes.push("aléa d'inondation/ruissellement non disponible");
+    if(!cawOk) notes.push("CAW non disponible");
+    if(!ipicOk) notes.push("IPIC non disponible");
+    if(!patMndOk) notes.push("biens mondiaux non disponibles");
+    if(!bcPatOk) notes.push("BC_PAT non disponible");
+    if(!patLstsavOk) notes.push("liste de sauvegarde non disponible");
+    if(!patExcOk) notes.push("biens exceptionnels non disponibles");
+    if(!lotOk) notes.push("permis d'urbanisation non disponibles");
+    if(!planhpOk) notes.push("Plan Habitat Permanent non disponible");
+    if(!rmbmtOk) notes.push("remembrement urbain non disponible");
+    if(!sarOk) notes.push("SAR non disponible");
+    if(!sevesoOk) notes.push("SEVESO non disponible");
+    if(!renovOk) notes.push("rénovation urbaine non disponible");
+    if(!revitOk) notes.push("revitalisation urbaine non disponible");
+    if(!preOk) notes.push("PRE non disponible");
+    if(!tnuOk) notes.push("TNU non disponible");
+    if(!terrilsOk) notes.push("terrils non disponibles");
+    for(const layer of ISA_LAYERS){ if(!isaOkByCol[layer.col]) notes.push(`ISA "${layer.label}" non disponible`); }
+    if(!zipOk) notes.push("ZIP non disponible");
+    if(!erosionOk) notes.push("érosion hydrique diffuse non disponible");
+    if(!ahremOk) notes.push("AHREM non disponible");
+    if(!natura2000Ok) notes.push("Natura 2000 non disponible");
+    if(!foretOk) notes.push("masque forestier non disponible (service raster)");
+    if(!pprOk) notes.push("préemption (PPR) non disponible");
     const noteStr = notes.length ? ` (${notes.join(" ; ")})` : "";
-    const allOk = assainOk && sdcSolOk && gruGcuOk;
-    setStatus(status2El, `Terminé — plan de secteur, SDC/SOL, GRU/GCU, captages et assainissement complétés pour ${lastRows.length} ligne(s) (${withCoords.length} avec coordonnées)${noteStr}.`, allOk ? "ok" : "warn");
+    const isaAllOk = ISA_LAYERS.every(l => isaOkByCol[l.col]);
+    const allOk = assainOk && sdcSolOk && gruGcuOk && aleaOk && cawOk && ipicOk && patMndOk && bcPatOk && patLstsavOk && patExcOk
+      && lotOk && planhpOk && rmbmtOk && sarOk && sevesoOk && renovOk && revitOk && preOk && tnuOk
+      && terrilsOk && isaAllOk && zipOk && erosionOk && ahremOk && natura2000Ok && foretOk && pprOk;
+    setStatus(status2El, `Terminé — plan de secteur, SDC/SOL, GRU/GCU, aléa inondation/ruissellement, captages, assainissement, patrimoine, urbanisme opérationnel, terrils, sites à réaménager (inventaire), environnement et préemption complétés pour ${lastRows.length} ligne(s) (${withCoords.length} avec coordonnées)${noteStr}.`, allOk ? "ok" : "warn");
     renderTable(lastRows);
     $("btn-xlsx").disabled = false;
   }catch(err){
@@ -1331,7 +2325,7 @@ function exportXlsx(){
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Feuil1");
-  XLSX.writeFile(wb, "export_wallonie_A_a_BJ.xlsx");
+  XLSX.writeFile(wb, "export_wallonie_A_a_CX.xlsx");
 }
 
 $("btn-search").addEventListener("click", runSearch);
