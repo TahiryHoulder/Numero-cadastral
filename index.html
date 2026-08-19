@@ -510,10 +510,22 @@ const PPR_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEME
 const PPR_LAYER = 0;
 
 const TERRILS_ISA_ENV_COLS = ["BZ","CA","CB","CC","CD","CE","CF","CG","CH","CI","CJ","CK"];
-// CL (lien contrat de rénovation urbaine, manuel), CM (préemption, implémentée), puis CN à CT
-// (BDES, quartiers à loyers majorés, Territoire du Canal, pôle de développement prioritaire, zone
-// de revitalisation urbaine, EDRLR — aucun service ArcGIS fiable identifié à ce stade, restent à
-// leur valeur par défaut). Cette liste DOIT respecter l'ordre exact des colonnes du modèle Excel.
+//   CN / CO — Banque de Données de l'État des Sols (BDES), service "série" à 2 couches distinctes,
+//   confirmé via /MapServer?f=json (comme pour ISA plus haut, mapping explicite plutôt que boucle) :
+//     0 = Parcelles pour lesquelles des démarches de gestion des sols ont été réalisées ou sont à
+//         prévoir (Art. 12 §2 et 3 du Décret Sols)                          -> CN
+//     1 = Parcelles concernées par des informations de nature strictement
+//         indicative ne menant à aucune obligation (Art. 12 §4 du Décret Sols) -> CO
+const BDES_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/SOL_SOUS_SOL/BDES_INVENTAIRE/MapServer";
+const BDES_LAYERS = [
+  {id:0, col:"CN", label:"Parcelles nécessitant des démarches (BDES)"},
+  {id:1, col:"CO", label:"Parcelles de nature indicative (BDES)"}
+];
+// CL (lien contrat de rénovation urbaine, manuel), CM (préemption, implémentée), CN/CO (BDES,
+// implémentées ci-dessus), puis CP à CT (quartiers à loyers majorés, Territoire du Canal, pôle de
+// développement prioritaire, zone de revitalisation urbaine, EDRLR — aucun service ArcGIS fiable
+// identifié à ce stade, restent à leur valeur par défaut). Cette liste DOIT respecter l'ordre exact
+// des colonnes du modèle Excel.
 const CL_TO_CT_COLS = ["CL","CM","CN","CO","CP","CQ","CR","CS","CT"];
 // Même tolérance de proximité que pour le bloc Patrimoine, pour les couches candidates dont le
 // type de géométrie exact (point vs polygone) n'est pas garanti (AHREM notamment, qui mélange
@@ -1570,6 +1582,7 @@ async function runPds(){
     let tnuFeats = [], tnuOk = true;
     let terrilsFeats = [], terrilsOk = true;
     const isaFeatsByCol = {}, isaOkByCol = {};
+    const bdesFeatsByCol = {}, bdesOkByCol = {};
     let zipFeats = [], zipOk = true;
     let erosionFeats = [], erosionOk = true;
     let ahremFeats = [], ahremOk = true;
@@ -1929,7 +1942,21 @@ async function runPds(){
           setStatus(status2El, "Périmètres de préemption non récupérés (" + e.message + ") — CM laissée à N.", "warn");
         }
         taskProgress();
-      }
+      },
+      // --- Banque de Données de l'État des Sols (BDES, CN à CO) : 2 couches, chacune sa propre
+      // tâche/try-catch (échec isolé d'une couche = seule sa colonne reste à N), même logique que
+      // pour ISA plus haut.
+      ...BDES_LAYERS.map(layer => async () => {
+        try{
+          bdesFeatsByCol[layer.col] = await fetchArcgisLayerInEnvelope(BDES_BASE, layer.id, xmin, ymin, xmax, ymax, "OBJECTID");
+          bdesOkByCol[layer.col] = true;
+        }catch(e){
+          bdesFeatsByCol[layer.col] = [];
+          bdesOkByCol[layer.col] = false;
+          setStatus(status2El, `BDES — "${layer.label}" non récupérée (${e.message}) — ${layer.col} laissée à N.`, "warn");
+        }
+        taskProgress();
+      })
     ];
     tasksTotal = tasks.length;
     // CORRECTIF IMPORTANT : lancer les ~30 tâches en une seule fois via Promise.all (comme dans
@@ -1940,7 +1967,7 @@ async function runPds(){
     // vitesse important par rapport à un enchaînement strictement séquentiel) tout en le bornant à
     // TASK_CONCURRENCY requêtes de front simultanées, via le même utilitaire mapLimit que celui
     // déjà utilisé pour les adresses et les rues.
-    setStatus(status2El, `Récupération de ${tasksTotal} couches de données (plan de secteur, SDC/SOL, GRU/GCU, aléa inondation, captages, assainissement, patrimoine, urbanisme opérationnel, terrils, ISA, environnement, préemption), ${TASK_CONCURRENCY} maximum en simultané…`);
+    setStatus(status2El, `Récupération de ${tasksTotal} couches de données (plan de secteur, SDC/SOL, GRU/GCU, aléa inondation, captages, assainissement, patrimoine, urbanisme opérationnel, terrils, ISA, environnement, préemption, BDES), ${TASK_CONCURRENCY} maximum en simultané…`);
     await mapLimit(tasks, TASK_CONCURRENCY, (fn) => fn());
     progressBar2.style.width = "78%";
 
@@ -2244,6 +2271,14 @@ async function runPds(){
             if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds["CM"] = "O"; break; }
           }
         }
+
+        // --- Banque de Données de l'État des Sols (BDES, CN à CO) : chaque couche est indépendante.
+        for(const layer of BDES_LAYERS){
+          if(!bdesOkByCol[layer.col]) continue;
+          for(const f of bdesFeatsByCol[layer.col]){
+            if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds[layer.col] = "O"; break; }
+          }
+        }
       }
       row.pds = pds;
       done++;
@@ -2283,12 +2318,14 @@ async function runPds(){
     if(!natura2000Ok) notes.push("Natura 2000 non disponible");
     if(!foretOk) notes.push("masque forestier non disponible (service raster)");
     if(!pprOk) notes.push("préemption (PPR) non disponible");
+    for(const layer of BDES_LAYERS){ if(!bdesOkByCol[layer.col]) notes.push(`BDES "${layer.label}" non disponible`); }
     const noteStr = notes.length ? ` (${notes.join(" ; ")})` : "";
     const isaAllOk = ISA_LAYERS.every(l => isaOkByCol[l.col]);
+    const bdesAllOk = BDES_LAYERS.every(l => bdesOkByCol[l.col]);
     const allOk = assainOk && sdcOk && solOk && gruGcuOk && aleaOk && cawOk && ipicOk && patMndOk && bcPatOk && patLstsavOk && patExcOk
       && lotOk && planhpOk && rmbmtOk && sarOk && sevesoOk && renovOk && revitOk && preOk && tnuOk
-      && terrilsOk && isaAllOk && zipOk && erosionOk && ahremOk && natura2000Ok && foretOk && pprOk;
-    setStatus(status2El, `Terminé — plan de secteur, SDC/SOL, GRU/GCU, aléa inondation/ruissellement, captages, assainissement, patrimoine, urbanisme opérationnel, terrils, sites à réaménager (inventaire), environnement et préemption complétés pour ${lastRows.length} ligne(s) (${withCoords.length} avec coordonnées)${noteStr}.`, allOk ? "ok" : "warn");
+      && terrilsOk && isaAllOk && zipOk && erosionOk && ahremOk && natura2000Ok && foretOk && pprOk && bdesAllOk;
+    setStatus(status2El, `Terminé — plan de secteur, SDC/SOL, GRU/GCU, aléa inondation/ruissellement, captages, assainissement, patrimoine, urbanisme opérationnel, terrils, sites à réaménager (inventaire), environnement, préemption et BDES complétés pour ${lastRows.length} ligne(s) (${withCoords.length} avec coordonnées)${noteStr}.`, allOk ? "ok" : "warn");
     renderTable(lastRows);
     $("btn-xlsx").disabled = false;
   }catch(err){
