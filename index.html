@@ -98,6 +98,9 @@
   .n{ color:#b7b0a2; }
   .qm{ color:#a06b1a; font-weight:700; }
   .tablewrap{ overflow-x:auto; max-height:520px; overflow-y:auto; }
+
+  footer{ max-width:1180px; margin:0 auto; padding:0 20px 40px; font-size:12px; color:#8a8478;}
+  footer a{ color:var(--wal-red-dark); }
   code{ background:#efeae1; padding:1px 5px; border-radius:2px; font-size:12px; }
   .roadmap{ font-size:12.5px; color:#5b564d; }
   .roadmap li{ margin-bottom:4px; }
@@ -154,8 +157,6 @@
 
 
 </main>
-
-
 
 <script>
 const ICAR_URL = "https://geoservices.wallonie.be/arcgis/rest/services/DONNEES_BASE/ICAR_ADR_PT/MapServer/1/query";
@@ -250,11 +251,9 @@ const URBANISME_COLS = SDC_SOL_COLS.concat(GRU_GCU_COLS);
 //   110/210/310 = Aléa FAIBLE     -> AW
 //   120/220/320 = Aléa MOYEN      -> AX
 //   130/230/330 = Aléa ÉLEVÉ      -> AY
-// Il n'existe pas, dans cette couche vectorielle officielle, de 4e classe "très faible" distincte
-// et confirmée (le référentiel distingue seulement faible/moyen/élevé) : la colonne AV (aléa très
-// faible) est donc laissée à sa valeur par défaut (N) plutôt que de risquer un mauvais mapping —
-// à vérifier manuellement sur WalOnMap si cette information est indispensable pour une parcelle
-// donnée.
+// Cette couche vectorielle officielle ne distingue PAS de 4e classe "très faible" (le champ
+// CLASSEMENT ne code que faible/moyen/élevé) : AV est donc calculée séparément, via la couche
+// RASTER dédiée (couche 1) juste en dessous.
 const ALEA_INOND_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/EAU/ALEA_INOND/MapServer";
 const ALEA_INOND_LAYER = 2;
 const ALEA_CLASSEMENT_TO_COL = {
@@ -262,6 +261,19 @@ const ALEA_CLASSEMENT_TO_COL = {
   120:"AX", 220:"AX", 320:"AX",
   130:"AY", 230:"AY", 330:"AY"
 };
+// CORRIGÉ (AV) : contrairement à la couche vectorielle ci-dessus, la couche RASTER "Aléa
+// d'inondation par débordement et ruissellement – version raster, échelles inférieures au
+// 1:25.000" (même MapServer, couche 1) expose un champ CODEALEA distinct qui documente bien 4
+// classes, dont la classe 1 = "Aléa très faible" — confirmé sur le Géoportail (infobulle) :
+// Raster.CODEALEA = 1, Raster.VALEUR = "Aléa très faible", Raster.RGB = "210,255,190" (le vert
+// clair de la légende officielle). AV est donc désormais renseignée via cette couche raster.
+// Comme pour CH/CK/CI/CJ (voir fetchArcgisIdentifyHitAtPoint), cette couche est sensible à
+// l'échelle en /identify (Max Scale du service = 1:24999) : une enveloppe unique couvrant tout
+// le lot d'adresses donnerait une résolution trop grossière pour "voir" la couche à la plupart
+// des points. AV est donc vérifiée point par point, comme CH/CK/CI/CJ (voir fetchAleaTresFaibleAtPoint
+// et le bloc qui l'appelle, fusionné à la même passe que CH/CK/CI/CJ pour limiter le nombre
+// d'allers-retours réseau).
+const ALEA_RASTER_LAYER = 1;
 // SOL_SOUS_SOL/ERRUISSOL__RUISSELLEMENT_DIFFUS/MapServer, couche 0 : risque de ruissellement
 // diffus (méthode SCS, taux de ruissellement potentiel). Couche interrogée par enveloppe comme
 // les autres ; toute géométrie présente à l'endroit du point vaut "présence de risque" -> AZ = O.
@@ -300,7 +312,7 @@ const CAPT_COLS = ["BB","BC","BD","BE","BF"];
 // le message de statut affiche un diagnostic exploitable (nombre de zones PASH reçues) plutôt que
 // de basculer silencieusement vers "N" partout en cas de réponse vide.
 const PASH_MIRRORS = [
-  "https://sig.spge.be/server/rest/services/WebPash/WebPASH/MapServer/6/query",
+  // "https://sig.spge.be/server/rest/services/WebPash/WebPASH/MapServer/6/query",
   "https://sig.digiteaux.be/digiserver/rest/services/SPGE/WebPASH/MapServer/6/query"
 ];
 const ASSAIN_COLS = ["BG","BH","BI","BJ"];
@@ -388,8 +400,22 @@ const BC_PAT_LAYERS = [0, 1, 2, 3, 4];
 const PAT_LSTSAV_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PAT_LSTSAV/MapServer";
 const PAT_LSTSAV_CANDIDATE_LAYERS = [0, 1, 2, 3];
 //   BP — biens exceptionnels
+// BUG CORRIGÉ (important) : le service PAT_EXC expose EN RÉALITÉ 5 couches distinctes (confirmé
+// via /MapServer?f=json), sur le même modèle que BC_PAT (biens classés) juste au-dessus :
+//   0 = Monuments exceptionnels (ponctuel)
+//   1 = Sites exceptionnels (polygone)
+//   2 = Ensembles architecturaux exceptionnels (polygone)
+//   3 = Sites archéologiques exceptionnels (polygone)
+//   4 = Zones de protection exceptionnelles (polygone)
+// Le code précédent n'interrogeait QUE la couche 0 (Monuments exceptionnels, ponctuelle) : une
+// adresse couverte uniquement par un SITE exceptionnel (couche 1, polygonale — cas fréquent, les
+// sites exceptionnels étant de larges emprises, voir capture d'écran de référence : le polygone
+// vert hachuré "Patrimoine - Biens exceptionnels" à Lasne/Plancenoit) restait donc
+// systématiquement à "N" alors que la carte WalOnMap affiche clairement la zone en biens
+// exceptionnels. Les 5 couches sont désormais interrogées et combinées en OU logique, exactement
+// comme pour BC_PAT.
 const PAT_EXC_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PAT_EXC/MapServer";
-const PAT_EXC_LAYER = 0;
+const PAT_EXC_LAYERS = [0, 1, 2, 3, 4];
 const PATRIMOINE_COLS = ["BK","BL","BM","BN","BO","BP"];
 // Tolérance (en mètres) appliquée aux couches Patrimoine dont la géométrie renvoyée est
 // PONCTUELLE (ex. BC_PAT couche 0 "Monuments classés") — une adresse n'est presque jamais
@@ -498,15 +524,29 @@ const AHREM_CANDIDATE_LAYERS = [0, 1, 2, 3];
 //   CJ — Réseau Natura 2000 (unités de gestion en vigueur), couche 0 confirmée
 const NATURA2000_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/FAUNE_FLORE/NATURA2000/MapServer";
 const NATURA2000_LAYER = 0;
-//   CK — Masque forestier : service RASTER (image), pas une couche vectorielle comme les autres.
-//   Interrogé en meilleur effort via une requête d'identification par enveloppe ; si le service ne
-//   renvoie pas de géométrie exploitable (comportement attendu d'un raster), la colonne reste à N
-//   avec un avertissement plutôt que d'inventer une valeur.
-const FORET_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/FORET/FORET/MapServer";
+//   CK — Masque forestier : service RASTER (image). Couche 0 = "Masque forestier 2021-2022"
+//   (la plus récente, celle qui doit faire foi), couche 1 = "Masque forestier 2018".
+//   BUG TROUVÉ : contrairement à TOUS les autres services interrogés dans cet outil (natifs en
+//   EPSG:31370 / Lambert 72, comme row._x/row._y), FORET/MASQUES_FORESTIERS est nativement en
+//   EPSG:3812 (Lambert 2008), un système géodésique différent (datum ETRS89 au lieu de Belge
+//   1972). fetchArcgisIdentifyHitAtPoint envoyait pourtant la géométrie en 31370 en laissant
+//   /identify reprojeter lui-même côté serveur — pour ce service précis, ça pouvait renvoyer un
+//   pixel décalé de la position réelle (ou aucun résultat), d'où des adresses clairement en forêt
+//   (confirmé sur WalOnMap) qui ressortaient à "N". Corrigé en projetant le point EXPLICITEMENT en
+//   3812 via le GeometryServer officiel du même serveur ArcGIS (opération /project, cf.
+//   GEOMETRY_SERVER_BASE plus bas) avant d'appeler /identify avec sr=3812, au lieu de compter sur
+//   une reprojection implicite côté service raster.
+const FORET_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/FORET/MASQUES_FORESTIERS/MapServer";
 const FORET_LAYER = 0;
+// Service utilitaire ArcGIS standard (GeometryServer) du même serveur, utilisé uniquement pour
+// projeter un point de 31370 (Lambert 72, système utilisé partout ailleurs dans l'outil) vers 3812
+// (Lambert 2008, système natif de FORET/MASQUES_FORESTIERS) avant d'interroger ce service précis —
+// évite de dépendre d'une reprojection implicite potentiellement imprécise faite par /identify.
+const GEOMETRY_SERVER_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/Utilities/Geometry/GeometryServer";
 //   CM — Périmètre de préemption en aménagement du territoire (PPR), couche 0
 const PPR_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/AMENAGEMENT_TERRITOIRE/PPR/MapServer";
 const PPR_LAYER = 0;
+
 
 const TERRILS_ISA_ENV_COLS = ["BZ","CA","CB","CC","CD","CE","CF","CG","CH","CI","CJ","CK"];
 //   CN / CO — Banque de Données de l'État des Sols (BDES), service "série" à 2 couches distinctes,
@@ -637,6 +677,31 @@ async function fetchJson(url, params, timeoutMs){
   }finally{
     clearTimeout(timer);
   }
+}
+
+// Variante de fetchJson avec une nouvelle tentative automatique en cas d'échec TRANSITOIRE
+// (timeout, erreur réseau) — utilisée pour les requêtes /identify envoyées individuellement
+// pour CHAQUE adresse (CH/CI/CJ/CK). Sur un gros lot d'adresses, augmenter la concurrence (voir
+// ROW_IDENTIFY_CONCURRENCY plus bas) sature davantage le service ArcGIS de façon ponctuelle
+// (429/502/503, coupures momentanées) ; sans nouvelle tentative, ces erreurs ponctuelles
+// faisaient basculer silencieusement la ligne concernée à "N" (ou, cumulées sur beaucoup
+// d'adresses, donnaient l'impression que l'outil "plante"/se bloque). Une seule tentative
+// supplémentaire, après un court délai, suffit dans la grande majorité des cas sans alourdir
+// significativement le temps total.
+async function fetchJsonWithRetry(url, params, timeoutMs, retries){
+  const maxRetries = retries == null ? 1 : retries;
+  let lastErr;
+  for(let attempt = 0; attempt <= maxRetries; attempt++){
+    try{
+      return await fetchJson(url, params, timeoutMs);
+    }catch(e){
+      lastErr = e;
+      if(attempt < maxRetries){
+        await new Promise(r => setTimeout(r, 300 + attempt * 400));
+      }
+    }
+  }
+  throw lastErr;
 }
 
 // Repli JSONP générique pour les services ArcGIS Server qui ne renvoient pas d'en-têtes CORS
@@ -957,6 +1022,24 @@ function geometryHitsPoint(feature, x, y, pointMargin){
   if(g.paths){
     return distPointToPaths(x, y, g.paths) <= (pointMargin || 0);
   }
+  if(g.points){
+    // BUG CORRIGÉ (important) : geometryHitsPoint() ne testait auparavant QUE g.rings (polygone),
+    // g.paths (ligne) et g.x/g.y (point simple). Or la couche IPIC (colonne BL — "Inventaire
+    // Régional du patrimoine") est déclarée par le service comme "esriGeometryMultipoint"
+    // (confirmé via /MapServer/0?f=json) : sa géométrie ArcGIS a la forme { points: [[x,y], ...] },
+    // sans jamais exposer de propriété .x/.y au niveau de la géométrie elle-même. Aucune des 3
+    // conditions précédentes ne matchait donc jamais pour cette couche, et la fonction retombait
+    // systématiquement sur le "return false" final — d'où BL toujours à "N", même pour une adresse
+    // visiblement couverte par un point de l'inventaire sur la carte (voir capture d'écran de
+    // référence : triangles rouges "Patrimoine - Inventaire Régional du patrimoine"). On teste
+    // maintenant chaque point du tableau avec la même tolérance de proximité que pour une
+    // géométrie ponctuelle simple (une feature multipoint peut légitimement contenir plusieurs
+    // points, tous rattachés au même bien).
+    for(const pt of g.points){
+      if(Math.hypot(x - pt[0], y - pt[1]) <= (pointMargin || 0)) return true;
+    }
+    return false;
+  }
   if(typeof g.x === "number" && typeof g.y === "number"){
     return Math.hypot(x - g.x, y - g.y) <= (pointMargin || 0);
   }
@@ -1087,6 +1170,34 @@ async function mapLimit(items, limit, worker, onTick){
   }
   await Promise.all(Array.from({length: Math.min(limit, items.length)}, run));
   return results;
+}
+
+// Limiteur de concurrence RÉSEAU global, utilisé par la passe CH/CK/CI/CJ/AV/AZ plus bas.
+// Différence avec mapLimit : mapLimit borne le nombre d'ITEMS (ici, de LIGNES) traités en
+// parallèle — si une ligne déclenche plusieurs requêtes réseau groupées (Promise.allSettled),
+// son "slot" ne se libère qu'une fois TOUTES ces requêtes terminées, y compris la plus lente.
+// AsyncSemaphore borne au contraire le nombre de REQUÊTES RÉSEAU individuelles en vol : un slot
+// se libère dès qu'UNE requête se termine, indépendamment des autres requêtes de la même ligne.
+// Sur un gros lot (milliers de lignes), cela évite qu'une requête ponctuellement lente sur un
+// service ne bloque inutilement tout un groupe et laisse des connexions inutilisées pendant ce
+// temps — pur gain d'ordonnancement, aucun changement de logique métier ni de résultat.
+class AsyncSemaphore{
+  constructor(max){ this.max = max; this.current = 0; this.queue = []; }
+  acquire(){
+    return new Promise(resolve => {
+      if(this.current < this.max){ this.current++; resolve(); }
+      else this.queue.push(resolve);
+    });
+  }
+  release(){
+    if(this.queue.length){ this.queue.shift()(); }
+    else this.current--;
+  }
+  async run(fn){
+    await this.acquire();
+    try{ return await fn(); }
+    finally{ this.release(); }
+  }
 }
 
 function sortNumeroList(nums){
@@ -1422,6 +1533,205 @@ async function fetchArcgisLayersTolerant(base, candidateLayerIds, xmin, ymin, xm
   return all;
 }
 
+// Variante utilisant l'opération ArcGIS "/identify" au lieu de "/query", pour les services où
+// "query" renvoie une erreur HTTP 400 (ex. ERRUISSOL__EROSION_DIFFUSE / colonne CH) alors que
+// "identify" reste disponible sur le même MapServer.
+//
+// IMPORTANT — piège de "/identify" : contrairement à "/query" (qui fait une intersection
+// géométrique exacte, indépendante de toute notion d'échelle), "/identify" simule un rendu de
+// carte : les paramètres mapExtent + imageDisplay déterminent une résolution (mètres/pixel), donc
+// une échelle, et ArcGIS peut alors ne pas "dessiner" (donc ne pas identifier) une couche si cette
+// échelle sort de sa plage de visibilité (minScale/maxScale), ou généraliser sa géométrie au point
+// de manquer de petites zones. Envoyer une seule enveloppe couvrant TOUT un lot d'adresses (parfois
+// plusieurs centaines de mètres, voire plusieurs km) avec un imageDisplay fixe donnait donc une
+// résolution beaucoup trop grossière : la couche restait invisible à cette échelle pour la plupart
+// des points, d'où le symptôme observé ("N" alors que la zone est bien "O").
+//
+// Solution : interroger CHAQUE adresse individuellement, avec une petite enveloppe locale autour du
+// point (± localExtentMeters), ce qui garantit une résolution fine et constante quelle que soit la
+// taille du lot global — exactement comme si on zoomait sur chaque adresse dans un client cartes
+// avant de cliquer dessus. Retourne un booléen (au moins une des couches candidates touche le point,
+// dans la marge donnée) plutôt qu'un tableau de features, puisque l'appel est déjà localisé au point
+// à tester.
+// Projette un point de EPSG:31370 (Lambert 72, système utilisé partout ailleurs dans l'outil, y
+// compris row._x/row._y) vers EPSG:3812 (Lambert 2008, système natif de FORET/MASQUES_FORESTIERS,
+// voir le commentaire détaillé à la définition de FORET_BASE) via l'opération /project du
+// GeometryServer standard du même serveur ArcGIS — plutôt que de compter sur une reprojection
+// implicite potentiellement imprécise faite par /identify lui-même. Petit cache en mémoire (clé =
+// coordonnées arrondies au mm) pour éviter de reprojeter deux fois le même point si jamais réutilisé.
+const projectTo3812Cache = new Map();
+async function projectPointTo3812(x, y){
+  const key = x.toFixed(3) + "," + y.toFixed(3);
+  if(projectTo3812Cache.has(key)) return projectTo3812Cache.get(key);
+  const geometries = JSON.stringify({ geometryType: "esriGeometryPoint", geometries: [{ x, y }] });
+  const data = await fetchJsonWithRetry(GEOMETRY_SERVER_BASE + "/project", {
+    inSR: "31370", outSR: "3812", geometries, f: "json"
+  }, 12000, 1);
+  const g = data && data.geometries && data.geometries[0];
+  if(!g || typeof g.x !== "number" || typeof g.y !== "number"){
+    throw new Error("réponse de projection 31370→3812 invalide");
+  }
+  const result = { x: g.x, y: g.y };
+  projectTo3812Cache.set(key, result);
+  return result;
+}
+
+async function fetchArcgisIdentifyHitAtPoint(base, layerIds, x, y, marginMeters, excludeValues, srWkid){
+  const sr = srWkid || 31370;
+  const ids = Array.isArray(layerIds) ? layerIds : [layerIds];
+  const localExtentMeters = Math.max(marginMeters * 4, 100); // enveloppe locale, largement > marge
+  const geometry = JSON.stringify({ x, y, spatialReference: { wkid: sr } });
+  const imageDisplaySize = 500; // px — avec localExtentMeters ci-dessus, résolution ≈ 0.2-0.5 m/px
+  const resolution = (localExtentMeters * 2) / imageDisplaySize;
+  const toleranceParam = Math.max(1, Math.round(marginMeters / resolution));
+  // Timeout dédié plus court (12s au lieu des 25s par défaut de fetchJson) + une nouvelle
+  // tentative automatique (fetchJsonWithRetry) : sur un gros lot d'adresses, ces requêtes
+  // partent par centaines/milliers, et un service ponctuellement lent ou saturé ne doit ni
+  // bloquer la ligne 25s avant d'échouer, ni faire basculer définitivement la colonne à "N" dès
+  // le premier accroc — voir le commentaire détaillé à la définition de fetchJsonWithRetry.
+  const data = await fetchJsonWithRetry(base + "/identify", {
+    geometry, geometryType: "esriGeometryPoint", sr: String(sr),
+    layers: "all:" + ids.join(","),
+    tolerance: toleranceParam,
+    mapExtent: (x - localExtentMeters) + "," + (y - localExtentMeters) + "," + (x + localExtentMeters) + "," + (y + localExtentMeters),
+    imageDisplay: imageDisplaySize + "," + imageDisplaySize + ",96",
+    returnGeometry: "false", f: "json"
+  }, 12000, 1);
+  const results = data.results || [];
+  // IMPORTANT : les 3 couches candidates (prairie / culture non sarclée / culture sarclée) sont très
+  // probablement des couches RASTER (c'est cohérent avec le fait que "/query" renvoie une erreur 400
+  // dessus — les couches raster ne supportent pas l'opération query, seulement identify). Pour une
+  // couche raster, "/identify" renvoie TOUJOURS un résultat pour tout point situé dans son emprise,
+  // même un pixel "NoData" (= hors zone de risque) : "results.length > 0" comptait donc comme "O"
+  // n'importe quel point tombant simplement dans l'emprise du raster, d'où le symptôme "tout est
+  // devenu O". Il faut donc regarder la VALEUR du pixel ("value" / "Pixel Value"), et ignorer les
+  // résultats "NoData"/vides — seule une valeur de classe réelle doit compter comme un vrai "O".
+  // Pour une éventuelle couche vectorielle parmi les candidates (pas de "Pixel Value" dans les
+  // attributs), on garde l'ancien comportement : tout résultat renvoyé = touché.
+  // BUG CORRIGÉ : la clé "Pixel Value" était cherchée avec une casse exacte via
+  // hasOwnProperty, alors qu'ArcGIS la renvoie parfois sous une casse/orthographe différente
+  // selon le service ("Pixel value", "pixel value", "Stretched.Pixel Value"...). Quand la clé
+  // n'était pas trouvée telle quelle, le code retombait sur le "return true" final pour PEU
+  // IMPORTE le contenu réel — d'où le symptôme "tout devient O dès qu'il y a des coordonnées"
+  // observé sur CH. On cherche maintenant la clé de façon insensible à la casse (comme
+  // getAttrCI plus haut pour PASH), et on élargit la liste des jetons "pas de donnée".
+  const isNoDataToken = (v) => {
+    if(v === undefined || v === null) return true;
+    const s = String(v).trim().toLowerCase();
+    return ["nodata", "no data", "no_data", "nd", "null", "-9999", "-3.4e+38", ""].includes(s);
+  };
+  // excludeValues : valeurs de pixel réelles (donc pas "NoData") qui doivent malgré tout compter
+  // comme "pas de hit" (N). Cas d'usage : CH (érosion hydrique diffuse) où la valeur de pixel 7
+  // correspond à la classe "très faible" (Raster.DESCRIPTION = "très faible", confirmé via
+  // WalOnMap) — c'est la SEULE valeur de risque qui doit rester à "N" ; toutes les autres valeurs
+  // de classe (1 à 6, etc.) sont de vrais risques et doivent rester à "O". Sans ce paramètre
+  // (undefined/tableau vide), le comportement est inchangé pour les autres appelants (CK/CI/CJ) :
+  // toute valeur réelle (non-NoData) compte comme un hit.
+  const excludeSet = new Set((excludeValues || []).map(v => String(v).trim().toLowerCase()));
+  const isExcludedValue = (v) => excludeSet.has(String(v).trim().toLowerCase());
+  const findPixelValueKey = (attrs) => Object.keys(attrs).find(k => k.trim().toLowerCase().includes("pixel value") || k.trim().toLowerCase() === "value");
+  return results.some(r => {
+    if(!r) return false;
+    const attrs = r.attributes || {};
+    const pixelKey = findPixelValueKey(attrs);
+    if(pixelKey){
+      // couche raster : seule la valeur de pixel fait foi, quelle que soit la casse de la clé.
+      const val = attrs[pixelKey];
+      return !isNoDataToken(val) && !isExcludedValue(val);
+    }
+    if(Object.keys(attrs).length > 0){
+      // couche vectorielle (features réelles avec attributs propres à la couche, pas de champ
+      // "Pixel Value") : la géométrie renvoyée par /identify avec tolérance est un vrai test
+      // spatial, donc tout résultat avec attributs = un vrai hit.
+      return true;
+    }
+    // ni "Pixel Value" identifiable, ni attribut exploitable, ni valeur top-level utilisable :
+    // rien de significatif à cet endroit.
+    return !isNoDataToken(r.value);
+  });
+}
+
+// Variante dédiée à l'aléa d'inondation "très faible" (AV), sur la couche RASTER ALEA_INOND/1
+// (voir le commentaire détaillé à la définition de ALEA_RASTER_LAYER). Contrairement à
+// fetchArcgisIdentifyHitAtPoint (qui répond "y a-t-il une vraie valeur, sauf celle(s)
+// exclue(s) ?"), ici c'est l'inverse : on veut savoir si LA valeur de classe au point est
+// PRÉCISÉMENT "très faible" (CODEALEA = 1), les autres classes (faible/moyen/élevé, déjà
+// couvertes par AW/AX/AY via la couche vectorielle) ne devant pas compter ici.
+async function fetchAleaTresFaibleAtPoint(x, y, marginMeters){
+  const localExtentMeters = Math.max(marginMeters * 4, 100);
+  const geometry = JSON.stringify({ x, y, spatialReference: { wkid: 31370 } });
+  const imageDisplaySize = 500;
+  const resolution = (localExtentMeters * 2) / imageDisplaySize;
+  const toleranceParam = Math.max(1, Math.round(marginMeters / resolution));
+  const data = await fetchJsonWithRetry(ALEA_INOND_BASE + "/identify", {
+    geometry, geometryType: "esriGeometryPoint", sr: "31370",
+    layers: "all:" + ALEA_RASTER_LAYER,
+    tolerance: toleranceParam,
+    mapExtent: (x - localExtentMeters) + "," + (y - localExtentMeters) + "," + (x + localExtentMeters) + "," + (y + localExtentMeters),
+    imageDisplay: imageDisplaySize + "," + imageDisplaySize + ",96",
+    returnGeometry: "false", f: "json"
+  }, 12000, 1);
+  const results = data.results || [];
+  return results.some(r => {
+    if(!r) return false;
+    const attrs = r.attributes || {};
+    const codealeaKey = findAttrKeyEndingWith(attrs, "codealea");
+    if(codealeaKey){
+      return String(attrs[codealeaKey]).trim() === "1";
+    }
+    // Repli si la clé CODEALEA n'est vraiment pas trouvable telle quelle (casse/orthographe
+    // inhabituelle côté serveur) : on se base alors sur le libellé texte du champ VALEUR plutôt
+    // que de risquer un mauvais mapping silencieux.
+    const valeurKey = findAttrKeyEndingWith(attrs, "valeur");
+    const valeur = valeurKey ? normalizeForKeyword(attrs[valeurKey]) : "";
+    return valeur.includes("TRES FAIBLE");
+  });
+}
+
+async function fetchArcgisIdentifyByEnvelope(base, layerIds, xmin, ymin, xmax, ymax, debugLabel){
+  const ids = Array.isArray(layerIds) ? layerIds : [layerIds];
+  const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
+  const imageDisplaySize = 500; // px
+  const toleranceParam = 0;
+  const params = {
+    geometry, geometryType: "esriGeometryEnvelope", sr: "31370",
+    layers: "all:" + ids.join(","),
+    tolerance: toleranceParam,
+    mapExtent: xmin + "," + ymin + "," + xmax + "," + ymax,
+    imageDisplay: imageDisplaySize + "," + imageDisplaySize + ",96",
+    // BUG CORRIGÉ : ce paramètre était à "false". Or plus bas (voir l'appelant, bloc "Aléa
+    // d'inondation"), le résultat de cette fonction est testé point par point avec
+    // ringsHitPoint(feature, x, y), qui a besoin de feature.geometry.rings pour savoir si le
+    // point tombe DANS le polygone. Sans géométrie renvoyée par /identify, ringsHitPoint()
+    // retournait donc TOUJOURS false, quel que soit l'endroit réellement testé — d'où le
+    // symptôme "AV à AY toujours à N", même sur des adresses en zone d'aléa connue.
+    returnGeometry: "true", f: "json"
+  };
+  let data;
+  try{
+    data = await fetchJson(base + "/identify", params);
+  }catch(e){
+    console.error(`[fetchArcgisIdentifyByEnvelope] échec requête (${debugLabel || base})`, { base, layerIds: ids, params, error: e });
+    throw e;
+  }
+  const results = data.results || [];
+  // Logs de diagnostic : à garder ouverts dans la console (F12) pour vérifier concrètement ce que
+  // renvoie le service pour une enveloppe donnée — nombre de résultats, présence/absence de
+  // géométrie (rings/paths/x-y) par résultat, et attributs bruts.
+  console.log(`[fetchArcgisIdentifyByEnvelope] ${debugLabel || base} — ${results.length} résultat(s)`, {
+    base, layerIds: ids, envelope: { xmin, ymin, xmax, ymax },
+    results: results.map(r => ({
+      layerId: r.layerId, layerName: r.layerName,
+      hasGeometry: !!r.geometry,
+      geometryType: r.geometry ? (r.geometry.rings ? "rings" : r.geometry.paths ? "paths" : (typeof r.geometry.x === "number" ? "point" : "?")) : null,
+      attributes: r.attributes
+    }))
+  });
+  if(results.length && !results.some(r => r.geometry)){
+    console.warn(`[fetchArcgisIdentifyByEnvelope] ${debugLabel || base} — résultats reçus MAIS sans géométrie (rings/paths). ringsHitPoint()/geometryHitsPoint() renverront false pour tous : vérifier returnGeometry côté service.`);
+  }
+  return results;
+}
 // Normalise (accents/casse) une valeur pour la recherche de mot-clé, sans dépendre du nom exact
 // du champ : on regarde TOUTES les valeurs texte renvoyées par la couche.
 function normalizeForKeyword(v){
@@ -1440,6 +1750,32 @@ function featureMatchesKeyword(feature, keywords){
     }
   }
   return false;
+}
+
+// Recherche insensible à la casse/orthographe de la clé "valeur de pixel" dans les attributs
+// renvoyés par un /identify sur une couche RASTER (ex. "Raster.VALUE", "Pixel Value",
+// "UniqueValue.Pixel Value"...) — même principe que la recherche de clé déjà utilisée dans
+// fetchArcgisIdentifyHitAtPoint (voir le commentaire détaillé à cet endroit sur la casse
+// variable des clés selon le service ArcGIS).
+function findRasterValueKey(attrs){
+  return Object.keys(attrs).find(k => {
+    const kl = k.trim().toLowerCase();
+    return kl === "value" || kl.endsWith(".value") || kl.endsWith("_value") || kl.includes("pixel value") || kl.includes("pixel val");
+  });
+}
+// Repli si aucune clé "valeur" n'est trouvée : on se rabat sur le libellé texte du champ
+// RUIS_DIFFUS lui-même (ex. "Raster.RUIS_DIFFUS"), en cherchant les mots-clés qui identifient
+// la classe "1" ("non cartographié ou non respect de la validité du modèle" — la SEULE classe
+// qui n'est PAS un risque).
+function findAttrKeyContaining(attrs, needleLower){
+  return Object.keys(attrs).find(k => k.trim().toLowerCase().includes(needleLower));
+}
+// Variante qui exige que la clé se TERMINE PAR le suffixe donné (ex. "codealea"), pour éviter de
+// confondre un champ comme "CODEALEA" avec un autre champ qui contiendrait la même chaîne ailleurs
+// dans son nom. Utilisé pour retrouver un champ précis (CODEALEA, VALEUR…) dans les attributs
+// renvoyés par /identify, quel que soit le préfixe ajouté par le serveur (ex. "Raster.CODEALEA").
+function findAttrKeyEndingWith(attrs, suffixLower){
+  return Object.keys(attrs).find(k => k.trim().toLowerCase().endsWith(suffixLower));
 }
 
 async function fetchCaptLayerInEnvelope(layerId, xmin, ymin, xmax, ymax, outFields){
@@ -1560,7 +1896,7 @@ async function runPds(){
     let reculStationFeats = [], reculStationOk = true;
     let sdcFeats = [], solFeats = [], sdcOk = true, solOk = true;
     let gruZpuFeats = [], gruRgbsrFeats = [], gruAcousFeats = [], gcuFeats = [], gruGcuOk = true;
-    let aleaFeats = [], diffusFeats = [], lidaxesFeats = [], aleaOk = true;
+    let aleaFeats = [], lidaxesFeats = [], aleaOk = true;
     const captGeoms = {};
     let captForfait = [];
     let assainFeats = [], assainOk = true, assainDiagnostic = "";
@@ -1583,11 +1919,41 @@ async function runPds(){
     const isaFeatsByCol = {}, isaOkByCol = {};
     const bdesFeatsByCol = {}, bdesOkByCol = {};
     let zipFeats = [], zipOk = true;
-    let erosionFeats = [], erosionOk = true;
-    let ahremFeats = [], ahremOk = true;
-    let natura2000Feats = [], natura2000Ok = true;
-    let foretFeats = [], foretOk = true;
+    // CH (érosion hydrique diffuse) n'utilise plus une enveloppe partagée pour tout le lot : voir
+    // chHitByRow / chErrorRows plus bas et le commentaire détaillé à cet endroit.
+    let erosionOk = true;
+    const chHitByRow = new Map();
+    let chErrorRows = 0, chHitCount = 0;
+    // CI (AHREM) et CJ (Natura 2000) traités point par point comme CH/CK (voir ahremHitByRow /
+    // natura2000HitByRow plus bas) : un identify sur un seul point (xmin,ymin) pour toute
+    // l'enveloppe du lot n'est pas fiable (mêmes soucis de sensibilité à l'échelle que CH/CK).
+    let ahremOk = true;
+    const ahremHitByRow = new Map();
+    let ahremErrorRows = 0, ahremHitCount = 0;
+    let natura2000Ok = true;
+    const natura2000HitByRow = new Map();
+    let natura2000ErrorRows = 0, natura2000HitCount = 0;
+    let foretOk = true;
+    const foretHitByRow = new Map();
+    let foretErrorRows = 0, foretHitCount = 0;
     let pprFeats = [], pprOk = true;
+    // AV (aléa d'inondation "très faible", raster) : même principe que CH/CK/CI/CJ juste au-dessus
+    // — vérifiée point par point (voir fetchAleaTresFaibleAtPoint), fusionnée à la même passe.
+    let avOk = true;
+    const avHitByRow = new Map();
+    let avErrorRows = 0, avHitCount = 0;
+    // AZ (risque de ruissellement diffus, ERRUISSOL) : BUG CORRIGÉ — comme CH/CK/CI/CJ/AV avant
+    // correction, AZ était interrogée via fetchArcgisIdentifyByEnvelope (UNE SEULE requête
+    // /identify avec un point géométrie = coin de l'enveloppe globale du lot, imageDisplay fixe
+    // 500x500). Sur cette couche RASTER, cela donne la même résolution bien trop grossière que le
+    // symptôme documenté pour CH (voir fetchArcgisIdentifyHitAtPoint) : la couche restait "invisible"
+    // à cette échelle pour la plupart des points, d'où des zones oranges/rouges/vert foncé (valeurs
+    // 2 à 5, toutes des vrais risques) qui restaient à "N" malgré isNonRisqueClasse1 correct. AZ est
+    // désormais vérifiée point par point via /identify, exactement comme CH (valeur de pixel exclue
+    // = 1 au lieu de 7), fusionnée à la même passe ci-dessous.
+    let azOk = true;
+    const azHitByRow = new Map();
+    let azErrorRows = 0, azHitCount = 0;
 
     let tasksDone = 0;
     let tasksTotal = 0;
@@ -1679,9 +2045,12 @@ async function runPds(){
       // plus haut, dans la définition de ALEA_INOND_BASE).
       async () => {
         try{
-          aleaFeats = await fetchArcgisLayerInEnvelope(ALEA_INOND_BASE, ALEA_INOND_LAYER, xmin, ymin, xmax, ymax, "CLASSEMENT");
-          diffusFeats = await fetchArcgisLayerInEnvelope(ERRUISSOL_DIFFUS_BASE, ERRUISSOL_DIFFUS_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
-          lidaxesFeats = await fetchArcgisLayerInEnvelope(LIDAXES_BASE, LIDAXES_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+          aleaFeats = await fetchArcgisIdentifyByEnvelope(ALEA_INOND_BASE, ALEA_INOND_LAYER, xmin, ymin, xmax, ymax, "CLASSEMENT");
+          // console.log(aleaFeats);
+          // AZ (ruissellement diffus) n'est plus récupérée ici : voir azHitByRow / la passe point
+          // par point ci-dessous (même correctif que CH), une enveloppe partagée n'étant pas fiable
+          // sur cette couche raster.
+          lidaxesFeats = await fetchArcgisIdentifyByEnvelope(LIDAXES_BASE, LIDAXES_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
         }catch(e){
           aleaOk = false;
           setStatus(status2El, "Aléa d'inondation / ruissellement non récupéré (" + e.message + ") — AV-BA laissées à N.", "warn");
@@ -1760,7 +2129,10 @@ async function runPds(){
       },
       async () => {
         try{
-          patExcFeats = await fetchArcgisLayerInEnvelope(PAT_EXC_BASE, PAT_EXC_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+          for(const layerId of PAT_EXC_LAYERS){
+            const feats = await fetchArcgisLayerInEnvelope(PAT_EXC_BASE, layerId, xmin, ymin, xmax, ymax, "OBJECTID");
+            patExcFeats = patExcFeats.concat(feats);
+          }
         }catch(e){
           patExcOk = false;
           setStatus(status2El, "Biens exceptionnels non récupérés (" + e.message + ") — BP laissée à N.", "warn");
@@ -1886,52 +2258,27 @@ async function runPds(){
         }
         taskProgress();
       },
-      // --- Risque d'érosion hydrique diffuse (CH) — service ERRUISSOL distinct de celui utilisé
-      // pour AZ (risque de ruissellement diffus) : ne pas confondre les deux. Les 3 couches
-      // candidates (une par occupation du sol) sont interrogées et combinées en OU logique — voir
-      // le commentaire détaillé au niveau de EROSION_DIFFUSE_CANDIDATE_LAYERS plus haut.
-      async () => {
-        try{
-          erosionFeats = await fetchArcgisLayersTolerant(EROSION_DIFFUSE_BASE, EROSION_DIFFUSE_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
-        }catch(e){
-          erosionOk = false;
-          setStatus(status2El, "Risque d'érosion hydrique diffuse non récupéré (" + e.message + ") — CH laissée à N.", "warn");
-        }
-        taskProgress();
-      },
-      // --- Arbres et haies remarquables (CI) — série à couches candidates (mode tolérant)
-      async () => {
-        try{
-          ahremFeats = await fetchArcgisLayersTolerant(AHREM_BASE, AHREM_CANDIDATE_LAYERS, xmin, ymin, xmax, ymax, "OBJECTID");
-        }catch(e){
-          ahremOk = false;
-          setStatus(status2El, "Arbres et haies remarquables non récupérés (" + e.message + ") — CI laissée à N.", "warn");
-        }
-        taskProgress();
-      },
-      // --- Réseau Natura 2000 (CJ)
-      async () => {
-        try{
-          natura2000Feats = await fetchArcgisLayerInEnvelope(NATURA2000_BASE, NATURA2000_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
-        }catch(e){
-          natura2000Ok = false;
-          setStatus(status2El, "Réseau Natura 2000 non récupéré (" + e.message + ") — CJ laissée à N.", "warn");
-        }
-        taskProgress();
-      },
-      // --- Masque forestier (CK) — service RASTER : une requête vectorielle standard peut ne
-      // renvoyer aucune géométrie même si la parcelle est en forêt (comportement normal d'un
-      // raster). On tente quand même la requête par enveloppe ; en cas d'échec ou de réponse
-      // vide, CK reste à N avec un avertissement explicite plutôt que de deviner.
-      async () => {
-        try{
-          foretFeats = await fetchArcgisLayerInEnvelope(FORET_BASE, FORET_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
-        }catch(e){
-          foretOk = false;
-          setStatus(status2El, "Masque forestier non récupéré en mode vecteur (" + e.message + ") — CK laissée à N (service raster, à vérifier manuellement sur WalOnMap si nécessaire).", "warn");
-        }
-        taskProgress();
-      },
+      // --- Risque d'érosion hydrique diffuse (CH) : traitée séparément, point par point, APRÈS
+      // ce bloc de tâches parallèles (voir juste après le `await mapLimit(tasks, ...)` ci-dessous).
+      // Raison : ce service (/identify, /query renvoyant du 400) est sensible à l'échelle
+      // (mapExtent + imageDisplay), et une enveloppe unique couvrant tout le lot d'adresses donne
+      // une résolution trop grossière pour que la couche soit "rendue" — voir le commentaire
+      // détaillé plus bas, à l'endroit où chHitByRow est rempli.
+
+      // --- Arbres et haies remarquables (CI) et Réseau Natura 2000 (CJ) : traités séparément,
+      // point par point, APRÈS ce bloc de tâches parallèles, exactement comme CH/CK juste en
+      // dessous. Raison : un /identify sur un seul point (xmin,ymin) pour toute l'enveloppe du lot
+      // n'est pas fiable pour ces services (même sensibilité à l'échelle que CH/CK) — c'est ce qui
+      // laissait CI/CJ à "N" pour toutes les lignes.
+
+      // --- Masque forestier (CK) : BUG CORRIGÉ — ce bloc appelait fetchArcgisLayerInEnvelope
+      // (opération /query, vectorielle) sur un service RASTER. Un raster ne renvoie jamais de
+      // "features" via /query (réponse techniquement valide mais toujours vide) : la requête ne
+      // levait donc AUCUNE erreur (foretOk restait true, aucun avertissement affiché) tout en
+      // laissant CK à "N" pour 100% des lignes. CK est désormais traité point par point via
+      // /identify, exactement comme CH juste en dessous (voir le bloc après le `await
+      // mapLimit(tasks, ...)` un peu plus bas), pour la même raison de sensibilité à l'échelle
+      // documentée dans fetchArcgisIdentifyHitAtPoint.
       // --- Périmètre de préemption en aménagement du territoire (CM)
       async () => {
         try{
@@ -1969,6 +2316,185 @@ async function runPds(){
     setStatus(status2El, `Récupération de ${tasksTotal} couches de données (plan de secteur, SDC/SOL, GRU/GCU, aléa inondation, captages, assainissement, patrimoine, urbanisme opérationnel, terrils, ISA, environnement, préemption, BDES), ${TASK_CONCURRENCY} maximum en simultané…`);
     await mapLimit(tasks, TASK_CONCURRENCY, (fn) => fn());
     progressBar2.style.width = "78%";
+
+    // --- Risque d'érosion hydrique diffuse (CH), Masque forestier (CK), Arbres et haies
+    // remarquables (CI), Réseau Natura 2000 (CJ) : ces 4 couches sont toutes vérifiées point par
+    // point via /identify (voir le commentaire détaillé dans fetchArcgisIdentifyHitAtPoint sur
+    // pourquoi une enveloppe partagée ne fonctionne pas ici). Elles étaient auparavant traitées en
+    // 4 passes SÉQUENTIELLES complètes sur toutes les adresses (CH puis CK puis CI puis CJ),
+    // soit environ 4x le temps nécessaire pour un seul aller-retour réseau par adresse.
+    // OPTIMISATION : fusionnées en une seule passe sur withCoords — pour chaque adresse, les 4
+    // requêtes /identify partent EN PARALLÈLE (Promise.allSettled) au lieu d'attendre 4 passes
+    // complètes. Le nombre total de requêtes HTTP est inchangé, et la concurrence globale reste
+    // bornée : on divise TASK_CONCURRENCY par 4 pour le nombre de LIGNES traitées en simultané,
+    // puisque chaque ligne déclenche maintenant 4 requêtes de front au lieu d'une — la charge
+    // réseau instantanée reste donc la même qu'avant (TASK_CONCURRENCY requêtes en vol au
+    // maximum), tout en gagnant environ 4x en temps total puisqu'il n'y a plus qu'une seule passe.
+    if(withCoords.length){
+      // CORRECTIF (vitesse + fiabilité sur gros lots) : cette passe tournait auparavant à
+      // TASK_CONCURRENCY/4 (= 2 avec TASK_CONCURRENCY=8), une valeur pensée pour NE PAS s'ajouter
+      // à la charge des ~30 tâches parallèles précédentes. Or à ce stade, ces tâches sont déjà
+      // TOUTES terminées (elles sont await-ées juste au-dessus) : rien n'oblige plus à partager
+      // le même budget de connexions simultanées.
+      // AMÉLIORATION (lots de 10 000 à 20 000+ adresses) : auparavant, ROW_IDENTIFY_CONCURRENCY
+      // bornait DIRECTEMENT le nombre de requêtes réseau en vol (6 lignes × 6 requêtes/ligne via
+      // Promise.allSettled ≈ 36 requêtes en vol au maximum), mais avec un défaut structurel : le
+      // "slot" d'une ligne ne se libérait qu'une fois SES 6 requêtes terminées, y compris la plus
+      // lente du lot — une seule requête ponctuellement lente sur un service (CI/CJ/AV/AZ...)
+      // suffisait à geler tout ce slot, alors que les autres connexions du navigateur restaient
+      // inutilisées pendant ce temps. Sur un gros lot, cet effet se répète des milliers de fois et
+      // ralentit fortement le débit réel malgré une concurrence nominale de 6.
+      // On sépare donc désormais les deux notions (aucun changement de logique de détermination
+      // AZ/CH/CI/CJ/CK/AV, uniquement l'ordonnancement réseau) :
+      //  - IDENTIFY_HTTP_LIMIT (AsyncSemaphore) plafonne le nombre RÉEL de requêtes HTTP
+      //    simultanées à 30 — exactement le même ordre de grandeur qu'avant (6×5 requêtes/ligne
+      //    validé en pratique avant l'ajout d'AZ) — mais requête par requête : dès qu'UNE requête
+      //    se termine, la suivante en attente démarre immédiatement, sans attendre les autres
+      //    requêtes de sa ligne.
+      //  - ROW_IDENTIFY_CONCURRENCY ne sert plus qu'à limiter le nombre de lignes "lancées" en
+      //    même temps (donc de boucles Promise.allSettled en attente) ; il peut être fixé
+      //    nettement plus haut puisque ce n'est plus lui qui régule la charge réseau réelle.
+      const IDENTIFY_HTTP_LIMIT = new AsyncSemaphore(30);
+      const ROW_IDENTIFY_CONCURRENCY = 200;
+      let rowsDone = 0;
+      const totalWithCoords = withCoords.length;
+      const updateRowProgress = () => {
+        rowsDone++;
+        // Barre de progression dédiée à cette passe (plage 78%→82%) + statut avec compteur en
+        // direct, mis à jour à chaque adresse traitée (et non plus une seule fois à la toute fin)
+        // pour que l'utilisateur voie que l'outil avance réellement sur un gros lot.
+        progressBar2.style.width = Math.round(78 + (rowsDone / totalWithCoords) * 4) + "%";
+        if(rowsDone === totalWithCoords || rowsDone % 20 === 0){
+          setStatus(status2El, `Vérification de l'érosion hydrique diffuse (CH), du masque forestier (CK), des arbres et haies remarquables (CI), du réseau Natura 2000 (CJ) et de l'aléa d'inondation très faible (AV) et du ruissellement diffus (AZ)… ${rowsDone}/${totalWithCoords} adresse(s).`);
+        }
+      };
+      setStatus(status2El, `Vérification de l'érosion hydrique diffuse (CH), du masque forestier (CK), des arbres et haies remarquables (CI), du réseau Natura 2000 (CJ) et de l'aléa d'inondation très faible (AV) et du ruissellement diffus (AZ) sur ${totalWithCoords} adresse(s)…`);
+      await mapLimit(withCoords, ROW_IDENTIFY_CONCURRENCY, async (row) => {
+        const [chRes, foretRes, ahremRes, natura2000Res, avRes, azRes] = await Promise.allSettled([
+          // Valeur de pixel 7 = classe "très faible" (Raster.DESCRIPTION), seule valeur qui doit
+          // rester à "N" ; toute autre valeur de classe (1 à 6…) reste un vrai "O".
+          IDENTIFY_HTTP_LIMIT.run(() =>
+            fetchArcgisIdentifyHitAtPoint(EROSION_DIFFUSE_BASE, EROSION_DIFFUSE_CANDIDATE_LAYERS, row._x, row._y, ENV_POINT_MARGIN, [7])
+          ),
+          // CK : FORET/MASQUES_FORESTIERS est nativement en 3812 (Lambert 2008), contrairement à
+          // row._x/row._y qui sont en 31370 (Lambert 72) — voir le commentaire à FORET_BASE. On
+          // projette donc le point en 3812 via le GeometryServer avant d'appeler /identify avec
+          // srWkid=3812, pour interroger le service dans son propre système natif. Valeur de pixel
+          // 0 = "hors forêt" (donnée officielle documentée), à exclure des hits : seule la valeur 1
+          // ("en forêt") doit compter comme "O". Les deux requêtes (projection + identify) sont
+          // gardées ensemble sous UN SEUL slot du sémaphore : elles sont séquentielles (la seconde
+          // dépend du résultat de la première), donc les regrouper ne change rien à la logique ni
+          // au nombre réel de requêtes simultanées possibles, tout en restant simple et sûr.
+          IDENTIFY_HTTP_LIMIT.run(() =>
+            projectPointTo3812(row._x, row._y).then(p =>
+              fetchArcgisIdentifyHitAtPoint(FORET_BASE, [FORET_LAYER], p.x, p.y, ENV_POINT_MARGIN, [0], 3812)
+            )
+          ),
+          IDENTIFY_HTTP_LIMIT.run(() =>
+            fetchArcgisIdentifyHitAtPoint(AHREM_BASE, AHREM_CANDIDATE_LAYERS, row._x, row._y, ENV_POINT_MARGIN)
+          ),
+          IDENTIFY_HTTP_LIMIT.run(() =>
+            fetchArcgisIdentifyHitAtPoint(NATURA2000_BASE, [NATURA2000_LAYER], row._x, row._y, ENV_POINT_MARGIN)
+          ),
+          // AV : aléa d'inondation "très faible" (CODEALEA=1), voir fetchAleaTresFaibleAtPoint.
+          IDENTIFY_HTTP_LIMIT.run(() =>
+            fetchAleaTresFaibleAtPoint(row._x, row._y, ENV_POINT_MARGIN)
+          ),
+          // AZ : risque de ruissellement diffus (ERRUISSOL). Valeur de pixel 1 = "non cartographié
+          // ou non respect de la validité du modèle" (PAS un risque), seule valeur qui doit rester
+          // à "N" ; toute autre valeur de classe (2, 3, 4, 5…) reste un vrai "O" — même logique que
+          // CH avec la valeur 7.
+          IDENTIFY_HTTP_LIMIT.run(() =>
+            fetchArcgisIdentifyHitAtPoint(ERRUISSOL_DIFFUS_BASE, ERRUISSOL_DIFFUS_LAYER, row._x, row._y, ENV_POINT_MARGIN, [1])
+          )
+        ]);
+        if(chRes.status === "fulfilled"){
+          if(chRes.value){ chHitByRow.set(row, true); chHitCount++; }
+        }else{
+          chErrorRows++;
+        }
+        if(foretRes.status === "fulfilled"){
+          if(foretRes.value){ foretHitByRow.set(row, true); foretHitCount++; }
+        }else{
+          foretErrorRows++;
+        }
+        if(ahremRes.status === "fulfilled"){
+          if(ahremRes.value){ ahremHitByRow.set(row, true); ahremHitCount++; }
+        }else{
+          ahremErrorRows++;
+        }
+        if(natura2000Res.status === "fulfilled"){
+          if(natura2000Res.value){ natura2000HitByRow.set(row, true); natura2000HitCount++; }
+        }else{
+          natura2000ErrorRows++;
+        }
+        if(avRes.status === "fulfilled"){
+          if(avRes.value){ avHitByRow.set(row, true); avHitCount++; }
+        }else{
+          avErrorRows++;
+        }
+        if(azRes.status === "fulfilled"){
+          if(azRes.value){ azHitByRow.set(row, true); azHitCount++; }
+        }else{
+          azErrorRows++;
+        }
+        updateRowProgress();
+        // Rend la main au thread UI toutes les 20 adresses : la barre de progression et le texte
+        // de statut mis à jour ci-dessus (updateRowProgress) sont ainsi effectivement peints à
+        // l'écran au fil de l'avancement, au lieu de rester figés à l'affichage jusqu'à la toute
+        // fin d'un gros lot (ce qui donnait l'impression que l'outil ne répondait plus).
+        if(rowsDone % 20 === 0) await yieldToUI();
+      });
+      if(chErrorRows > 0){
+        if(chErrorRows === withCoords.length){
+          erosionOk = false;
+          setStatus(status2El, "Risque d'érosion hydrique diffuse (CH) non récupéré (échec réseau sur toutes les adresses) — colonne laissée à N.", "warn");
+        }else{
+          setStatus(status2El, `Risque d'érosion hydrique diffuse (CH) : ${chErrorRows} adresse(s) sur ${withCoords.length} non vérifiée(s) (erreur réseau) — laissées à N.`, "warn");
+        }
+      }
+      if(foretErrorRows > 0){
+        if(foretErrorRows === withCoords.length){
+          foretOk = false;
+          setStatus(status2El, "Masque forestier (CK) non récupéré (échec réseau sur toutes les adresses) — colonne laissée à N.", "warn");
+        }else{
+          setStatus(status2El, `Masque forestier (CK) : ${foretErrorRows} adresse(s) sur ${withCoords.length} non vérifiée(s) (erreur réseau) — laissées à N.`, "warn");
+        }
+      }
+      if(ahremErrorRows > 0){
+        if(ahremErrorRows === withCoords.length){
+          ahremOk = false;
+          setStatus(status2El, "Arbres et haies remarquables (CI) non récupérés (échec réseau sur toutes les adresses) — colonne laissée à N.", "warn");
+        }else{
+          setStatus(status2El, `Arbres et haies remarquables (CI) : ${ahremErrorRows} adresse(s) sur ${withCoords.length} non vérifiée(s) (erreur réseau) — laissées à N.`, "warn");
+        }
+      }
+      if(natura2000ErrorRows > 0){
+        if(natura2000ErrorRows === withCoords.length){
+          natura2000Ok = false;
+          setStatus(status2El, "Réseau Natura 2000 (CJ) non récupéré (échec réseau sur toutes les adresses) — colonne laissée à N.", "warn");
+        }else{
+          setStatus(status2El, `Réseau Natura 2000 (CJ) : ${natura2000ErrorRows} adresse(s) sur ${withCoords.length} non vérifiée(s) (erreur réseau) — laissées à N.`, "warn");
+        }
+      }
+      if(avErrorRows > 0){
+        if(avErrorRows === withCoords.length){
+          avOk = false;
+          setStatus(status2El, "Aléa d'inondation très faible (AV) non récupéré (échec réseau sur toutes les adresses) — colonne laissée à N.", "warn");
+        }else{
+          setStatus(status2El, `Aléa d'inondation très faible (AV) : ${avErrorRows} adresse(s) sur ${withCoords.length} non vérifiée(s) (erreur réseau) — laissées à N.`, "warn");
+        }
+      }
+      if(azErrorRows > 0){
+        if(azErrorRows === withCoords.length){
+          azOk = false;
+          setStatus(status2El, "Risque de ruissellement diffus (AZ) non récupéré (échec réseau sur toutes les adresses) — colonne laissée à N.", "warn");
+        }else{
+          setStatus(status2El, `Risque de ruissellement diffus (AZ) : ${azErrorRows} adresse(s) sur ${withCoords.length} non vérifiée(s) (erreur réseau) — laissées à N.`, "warn");
+        }
+      }
+    }
+    progressBar2.style.width = "82%";
 
     setStatus(status2El, "Attribution des zones et périmètres à chaque ligne…");
     let done = 0;
@@ -2085,18 +2611,35 @@ async function runPds(){
         // --- Aléa d'inondation (AW-AY) via CLASSEMENT, ruissellement diffus (AZ), axe de
         // concentration du ruissellement (BA, avec tolérance de proximité car couche linéaire).
         if(aleaOk){
+          let aleaHit = false;
           for(const f of aleaFeats){
-            if(ringsHitPoint(f, row._x, row._y)){
-              const col = ALEA_CLASSEMENT_TO_COL[f.attributes.CLASSEMENT];
-              if(col){ pds[col] = "O"; break; }
+            if(!f.geometry || !f.geometry.rings){
+              // Sécurité : si un résultat sans géométrie passe malgré tout (service qui ignore
+              // returnGeometry=true, p.ex.), on le signale au lieu de le tester silencieusement
+              // contre un point (ringsHitPoint renverrait false de toute façon).
+              console.warn(`[Aléa inondation] feature sans rings pour ${row.rue || ""} ${row.numero || ""} — CLASSEMENT=${f.attributes && f.attributes.CLASSEMENT}`, f);
+              continue;
             }
-          }
-          for(const f of diffusFeats){
             if(ringsHitPoint(f, row._x, row._y)){
-              pds["AZ"] = "O";
+              const classement = f.attributes.CLASSEMENT;
+              const col = ALEA_CLASSEMENT_TO_COL[classement];
+              if(col){
+                pds[col] = "O";
+                aleaHit = true;
+              }else{
+                console.warn(`[Aléa inondation] CLASSEMENT inconnu (non mappé vers AW/AX/AY) : ${classement} — ${row.rue || ""} ${row.numero || ""}`, f.attributes);
+              }
               break;
             }
           }
+          if(aleaFeats.length && !aleaHit){
+            console.log(`[Aléa inondation] ${aleaFeats.length} polygone(s) dans l'enveloppe mais aucun ne contient le point ${row.rue || ""} ${row.numero || ""} (${row._x}, ${row._y}) — AW/AX/AY restent à N pour cette ligne.`);
+          }
+          // AZ (ruissellement diffus) : n'est plus déterminée ici via une enveloppe partagée
+          // (couche raster, mêmes soucis de résolution/échelle que CH — voir azHitByRow, rempli
+          // point par point plus haut, exactement comme CH/CK/CI/CJ/AV). azHitCount est déjà
+          // incrémenté dans cette même passe point par point.
+          if(azOk && azHitByRow.get(row)){ pds["AZ"] = "O"; }
           for(const f of lidaxesFeats){
             if(!f.geometry || !f.geometry.paths) continue;
             const d = distPointToPaths(row._x, row._y, f.geometry.paths);
@@ -2238,32 +2781,22 @@ async function runPds(){
             if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds["CG"] = "O"; break; }
           }
         }
-        // --- Risque d'érosion hydrique diffuse (CH) — erosionFeats contient déjà les features des
-        // 3 couches (prairie / culture non sarclée / culture sarclée) concaténées : dès qu'une
-        // géométrie de N'IMPORTE LAQUELLE des 3 touche le point, CH = "O" (OU logique).
-        if(erosionOk){
-          for(const f of erosionFeats){
-            if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds["CH"] = "O"; break; }
-          }
-        }
-        // --- Arbres et haies remarquables (CI)
-        if(ahremOk){
-          for(const f of ahremFeats){
-            if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds["CI"] = "O"; break; }
-          }
-        }
-        // --- Réseau Natura 2000 (CJ)
-        if(natura2000Ok){
-          for(const f of natura2000Feats){
-            if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds["CJ"] = "O"; break; }
-          }
-        }
-        // --- Masque forestier (CK) — meilleur effort (service raster, voir commentaire plus haut)
-        if(foretOk){
-          for(const f of foretFeats){
-            if(geometryHitsPoint(f, row._x, row._y, ENV_POINT_MARGIN)){ pds["CK"] = "O"; break; }
-          }
-        }
+        // --- Risque d'érosion hydrique diffuse (CH) — déjà résolu point par point ci-dessus (voir
+        // chHitByRow) : ici on ne fait que lire le résultat, sans nouveau test géométrique.
+        if(erosionOk && chHitByRow.get(row)){ pds["CH"] = "O"; }
+        // --- Arbres et haies remarquables (CI) — déjà résolu point par point ci-dessus (voir
+        // ahremHitByRow), même logique que CH/CK : on ne fait que lire le résultat ici.
+        if(ahremOk && ahremHitByRow.get(row)){ pds["CI"] = "O"; }
+        // --- Réseau Natura 2000 (CJ) — déjà résolu point par point ci-dessus (voir
+        // natura2000HitByRow), même logique que CH/CK : on ne fait que lire le résultat ici.
+        if(natura2000Ok && natura2000HitByRow.get(row)){ pds["CJ"] = "O"; }
+        // --- Masque forestier (CK) — déjà résolu point par point ci-dessus (voir foretHitByRow),
+        // même logique que CH : on ne fait que lire le résultat ici.
+        if(foretOk && foretHitByRow.get(row)){ pds["CK"] = "O"; }
+        // --- Aléa d'inondation "très faible" (AV) — déjà résolu point par point ci-dessus (voir
+        // avHitByRow / fetchAleaTresFaibleAtPoint), même logique que CH/CK/CI/CJ : on ne fait que
+        // lire le résultat ici.
+        if(avOk && avHitByRow.get(row)){ pds["AV"] = "O"; }
         // --- Périmètre de préemption (CM)
         if(pprOk){
           for(const f of pprFeats){
@@ -2294,6 +2827,8 @@ async function runPds(){
     if(!solOk) notes.push("SOL non disponible");
     if(!gruGcuOk) notes.push("GRU/GCU non disponibles");
     if(!aleaOk) notes.push("aléa d'inondation/ruissellement non disponible");
+    if(!avOk) notes.push("aléa d'inondation très faible (AV) non disponible");
+    if(!azOk) notes.push("ruissellement diffus (AZ) non disponible");
     if(!cawOk) notes.push("CAW non disponible");
     if(!ipicOk) notes.push("IPIC non disponible");
     if(!patMndOk) notes.push("biens mondiaux non disponibles");
@@ -2317,13 +2852,23 @@ async function runPds(){
     if(!natura2000Ok) notes.push("Natura 2000 non disponible");
     if(!foretOk) notes.push("masque forestier non disponible (service raster)");
     if(!pprOk) notes.push("préemption (PPR) non disponible");
+    // Diagnostic temporaire CH/CI/CJ/CK : à retirer une fois les 4 colonnes validées sur un vrai
+    // lot d'adresses. Permet de distinguer en un coup d'œil "vraiment 0 partout" (chiffres bas,
+    // cohérent) d'un souci de requête (CH quasi toujours O, ou CI/CJ à "0 feature dans
+    // l'enveloppe" alors qu'il devrait y en avoir).
+    notes.push(`CH: ${chHitCount}/${withCoords.length} en O`);
+    notes.push(`CK: ${foretHitCount}/${withCoords.length} en O`);
+    notes.push(`CI: ${ahremHitCount}/${withCoords.length} en O`);
+    notes.push(`CJ: ${natura2000HitCount}/${withCoords.length} en O`);
+    notes.push(`AZ: ${azHitCount}/${withCoords.length} en O`);
+    notes.push(`AV: ${avHitCount}/${withCoords.length} en O`);
     for(const layer of BDES_LAYERS){ if(!bdesOkByCol[layer.col]) notes.push(`BDES "${layer.label}" non disponible`); }
     const noteStr = notes.length ? ` (${notes.join(" ; ")})` : "";
     const isaAllOk = ISA_LAYERS.every(l => isaOkByCol[l.col]);
     const bdesAllOk = BDES_LAYERS.every(l => bdesOkByCol[l.col]);
     const allOk = assainOk && sdcOk && solOk && gruGcuOk && aleaOk && cawOk && ipicOk && patMndOk && bcPatOk && patLstsavOk && patExcOk
       && lotOk && planhpOk && rmbmtOk && sarOk && sevesoOk && renovOk && revitOk && preOk && tnuOk
-      && terrilsOk && isaAllOk && zipOk && erosionOk && ahremOk && natura2000Ok && foretOk && pprOk && bdesAllOk;
+      && terrilsOk && isaAllOk && zipOk && erosionOk && ahremOk && natura2000Ok && foretOk && pprOk && bdesAllOk && avOk;
     setStatus(status2El, `Terminé — plan de secteur, SDC/SOL, GRU/GCU, aléa inondation/ruissellement, captages, assainissement, patrimoine, urbanisme opérationnel, terrils, sites à réaménager (inventaire), environnement, préemption et BDES complétés pour ${lastRows.length} ligne(s) (${withCoords.length} avec coordonnées)${noteStr}.`, allOk ? "ok" : "warn");
     renderTable(lastRows);
     $("btn-xlsx").disabled = false;
