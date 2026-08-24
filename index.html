@@ -244,36 +244,38 @@ const GRU_GCU_COLS = ["AR","AS","AT","AU"];
 const URBANISME_COLS = SDC_SOL_COLS.concat(GRU_GCU_COLS);
 
 // --- Bloc "Aléa d'inondation / ruissellement" (AV à BA) ---
-// EAU/ALEA_INOND/MapServer, couche 2 ("échelles comprises entre 1:25.000 et 1:5000") : couche
-// VECTORIELLE (polygones), champ CLASSEMENT avec des codes numériques regroupés par 3 grandes
-// classes de gravité, qu'elles proviennent d'un débordement de cours d'eau (1xx), d'un
-// ruissellement (2xx) ou des deux combinés (3xx) :
-//   110/210/310 = Aléa FAIBLE     -> AW
-//   120/220/320 = Aléa MOYEN      -> AX
-//   130/230/330 = Aléa ÉLEVÉ      -> AY
-// Cette couche vectorielle officielle ne distingue PAS de 4e classe "très faible" (le champ
-// CLASSEMENT ne code que faible/moyen/élevé) : AV est donc calculée séparément, via la couche
-// RASTER dédiée (couche 1) juste en dessous.
+// EAU/ALEA_INOND/MapServer expose 2 couches complémentaires pour l'aléa d'inondation :
+//  - couche 1 (RASTER, "version raster, échelles inférieures au 1:25.000") : champ CODEALEA à 4
+//    classes — confirmé sur le Géoportail (infobulle) :
+//      CODEALEA = 1  -> Aléa TRÈS FAIBLE -> AV  (RGB 210,255,190 — vert)
+//      CODEALEA = 10 -> Aléa FAIBLE      -> AW  (RGB 255,255,0   — jaune)
+//      CODEALEA = 20 -> Aléa MOYEN       -> AX  (RGB 255,170,0   — orange)
+//      CODEALEA = 30 -> Aléa ÉLEVÉ       -> AY  (RGB 255,0,0     — rouge)
+//    Seule source disponible pour AV (pas de 4e classe "très faible" côté vectoriel, voir plus bas).
+//  - couche 2 (VECTORIELLE, "échelles comprises entre 1:25.000 et 1:5.000") : polygones officiels
+//    avec un champ CLASSEMENT (110/210/310=faible, 120/220/320=moyen, 130/230/330=élevé selon
+//    qu'il s'agit d'un débordement de cours d'eau/d'un ruissellement/des deux combinés), utilisée
+//    pour AW/AX/AY.
+// PRÉCISION AMÉLIORÉE (AV/AW/AX/AY) : un simple test au POINT d'adresse (même avec une tolérance
+// de quelques mètres) manque un aléa qui touche une AUTRE partie du parcel (parcelles souvent
+// grandes ; l'aléa peut ne couvrir que le fond du terrain). AW/AX/AY sont donc désormais
+// déterminées par une vraie requête polygone-contre-polygone (spatialRel=esriSpatialRelIntersects)
+// entre le PARCEL cadastral complet (rings récupérés via findParcelle/fetchParcellesInEnvelope,
+// voir row._parcelleRings) et la couche vectorielle 2 — "le parcel touche la couche Aléa" au sens
+// propre, et non plus seulement le point d'adresse. La couche raster (1) n'offrant pas cette
+// requête polygone fiable, AV — et AW/AX/AY en renfort, au cas où le parcel toucherait une zone
+// que la couche vectorielle ne couvre pas à cette échelle — restent testées par échantillonnage de
+// plusieurs points RÉPARTIS SUR LE CONTOUR DU PARCEL (voir sampleRingPoints), plutôt qu'un point
+// unique : voir resolveAleaClassesForRow, qui combine ces deux méthodes et fusionne leurs résultats.
 const ALEA_INOND_BASE = "https://geoservices.wallonie.be/arcgis/rest/services/EAU/ALEA_INOND/MapServer";
-const ALEA_INOND_LAYER = 2;
+const ALEA_RASTER_LAYER = 1;
+const ALEA_INOND_VECTOR_LAYER = 2;
+const ALEA_CODEALEA_TO_COL = { "1":"AV", "10":"AW", "20":"AX", "30":"AY" };
 const ALEA_CLASSEMENT_TO_COL = {
   110:"AW", 210:"AW", 310:"AW",
   120:"AX", 220:"AX", 320:"AX",
   130:"AY", 230:"AY", 330:"AY"
 };
-// CORRIGÉ (AV) : contrairement à la couche vectorielle ci-dessus, la couche RASTER "Aléa
-// d'inondation par débordement et ruissellement – version raster, échelles inférieures au
-// 1:25.000" (même MapServer, couche 1) expose un champ CODEALEA distinct qui documente bien 4
-// classes, dont la classe 1 = "Aléa très faible" — confirmé sur le Géoportail (infobulle) :
-// Raster.CODEALEA = 1, Raster.VALEUR = "Aléa très faible", Raster.RGB = "210,255,190" (le vert
-// clair de la légende officielle). AV est donc désormais renseignée via cette couche raster.
-// Comme pour CH/CK/CI/CJ (voir fetchArcgisIdentifyHitAtPoint), cette couche est sensible à
-// l'échelle en /identify (Max Scale du service = 1:24999) : une enveloppe unique couvrant tout
-// le lot d'adresses donnerait une résolution trop grossière pour "voir" la couche à la plupart
-// des points. AV est donc vérifiée point par point, comme CH/CK/CI/CJ (voir fetchAleaTresFaibleAtPoint
-// et le bloc qui l'appelle, fusionné à la même passe que CH/CK/CI/CJ pour limiter le nombre
-// d'allers-retours réseau).
-const ALEA_RASTER_LAYER = 1;
 // SOL_SOUS_SOL/ERRUISSOL__RUISSELLEMENT_DIFFUS/MapServer, couche 0 : risque de ruissellement
 // diffus (méthode SCS, taux de ruissellement potentiel). Couche interrogée par enveloppe comme
 // les autres ; toute géométrie présente à l'endroit du point vaut "présence de risque" -> AZ = O.
@@ -794,6 +796,10 @@ async function fetchAdresses(rue, commune, cp){
 // d'adresse — une heuristique simple mais nettement plus fiable qu'un choix arbitraire pour ces
 // cas limites, sans coût significatif (les parcelles cadastrales sont petites, la géométrie reste
 // légère).
+// CORRIGÉ : renvoie désormais la feature complète (attributes + geometry, au lieu des seuls
+// attributes) — le rings du parcel est réutilisé plus loin pour tester "le parcel touche la
+// couche Aléa" (voir row._parcelleRings / resolveAleaClassesForRow), et non plus jeté après le
+// calcul du centroïde de désambiguïsation.
 async function findParcelle(x, y){
   const geometry = JSON.stringify({ x, y, spatialReference: { wkid: 31370 } });
   const data = await fetchJson(CAD_URL, {
@@ -804,7 +810,7 @@ async function findParcelle(x, y){
   });
   const feats = data.features || [];
   if(!feats.length) return null;
-  if(feats.length === 1) return feats[0].attributes;
+  if(feats.length === 1) return feats[0];
   let best = feats[0], bestDist = Infinity;
   for(const f of feats){
     if(!f.geometry || !f.geometry.rings) continue;
@@ -812,7 +818,7 @@ async function findParcelle(x, y){
     const d = Math.hypot(x - c.x, y - c.y);
     if(d < bestDist){ bestDist = d; best = f; }
   }
-  return best.attributes;
+  return best;
 }
 
 // Timeout dédié, plus généreux que le défaut (25s) de fetchJson : ces trois fonctions transfèrent
@@ -1121,7 +1127,7 @@ async function processStreetGroup(group, matchedCapakeys, onProgress){
           numero: sortNumeroList(numsSet).join(", "),
           capakey: fmt ? fmt.capakey : a.CAPAKEY,
           parcelleDisplay: fmt ? fmt.display : "",
-          _x: c.x, _y: c.y
+          _x: c.x, _y: c.y, _parcelleRings: p.geometry.rings
         });
       } else {
         const attrs = bestAxis.attributes;
@@ -1145,7 +1151,7 @@ async function processStreetGroup(group, matchedCapakeys, onProgress){
           numero: "/",
           capakey: fmt ? fmt.capakey : a.CAPAKEY,
           parcelleDisplay: fmt ? fmt.display : "",
-          _x: c.x, _y: c.y
+          _x: c.x, _y: c.y, _parcelleRings: p.geometry.rings
         });
       }
     }
@@ -1368,16 +1374,17 @@ async function runSearch(){
     const addressRows = await mapLimit(feats, 10, async (f) => {
       const a = f.attributes;
       const g = f.geometry;
-      let capakey = null, parcelleDisplay = null;
+      let capakey = null, parcelleDisplay = null, parcelleRings = null;
       if(g && typeof g.x === "number" && typeof g.y === "number"){
         try{
           const parc = await findParcelle(g.x, g.y);
-          const fmt = formatParcelle(parc);
+          const fmt = formatParcelle(parc && parc.attributes);
           if(fmt){
             capakey = fmt.capakey;
             parcelleDisplay = fmt.display;
             matchedCapakeys.add(capakey);
           }
+          if(parc && parc.geometry && parc.geometry.rings) parcelleRings = parc.geometry.rings;
         }catch(e){ /* on continue même si une parcelle échoue */ }
       }
       const numero = (a.ADR_NUMERO === null || a.ADR_NUMERO === undefined || String(a.ADR_NUMERO).trim() === "")
@@ -1387,7 +1394,7 @@ async function runSearch(){
         rue: a.RUE_NM || "(rue inconnue)",
         cp: a.CODE_POSTAL || "",
         numero, capakey, parcelleDisplay,
-        _x: g && g.x, _y: g && g.y
+        _x: g && g.x, _y: g && g.y, _parcelleRings: parcelleRings
       };
     }, (done,total)=>{ progressBar.style.width = Math.round((done/total)*100) + "%"; });
 
@@ -1651,13 +1658,13 @@ async function fetchArcgisIdentifyHitAtPoint(base, layerIds, x, y, marginMeters,
   });
 }
 
-// Variante dédiée à l'aléa d'inondation "très faible" (AV), sur la couche RASTER ALEA_INOND/1
-// (voir le commentaire détaillé à la définition de ALEA_RASTER_LAYER). Contrairement à
-// fetchArcgisIdentifyHitAtPoint (qui répond "y a-t-il une vraie valeur, sauf celle(s)
-// exclue(s) ?"), ici c'est l'inverse : on veut savoir si LA valeur de classe au point est
-// PRÉCISÉMENT "très faible" (CODEALEA = 1), les autres classes (faible/moyen/élevé, déjà
-// couvertes par AW/AX/AY via la couche vectorielle) ne devant pas compter ici.
-async function fetchAleaTresFaibleAtPoint(x, y, marginMeters){
+// Renvoie la classe d'aléa d'inondation trouvée au point donné, sur la couche RASTER
+// ALEA_INOND/1 (voir le commentaire détaillé à la définition de ALEA_INOND_BASE) : "1"
+// (très faible), "10" (faible), "20" (moyen), "30" (élevé), ou null si aucune classe d'aléa à
+// cet endroit. Généralisation de l'ancienne fetchAleaTresFaibleAtPoint (qui ne testait que
+// CODEALEA=1, pour AV uniquement) : AV/AW/AX/AY sont désormais toutes les 4 déterminées par ce
+// même appel point par point, aiguillées vers la bonne colonne via ALEA_CODEALEA_TO_COL.
+async function fetchAleaClasseAtPoint(x, y, marginMeters){
   const localExtentMeters = Math.max(marginMeters * 4, 100);
   const geometry = JSON.stringify({ x, y, spatialReference: { wkid: 31370 } });
   const imageDisplaySize = 500;
@@ -1672,20 +1679,116 @@ async function fetchAleaTresFaibleAtPoint(x, y, marginMeters){
     returnGeometry: "false", f: "json"
   }, 12000, 1);
   const results = data.results || [];
-  return results.some(r => {
-    if(!r) return false;
+  for(const r of results){
+    if(!r) continue;
     const attrs = r.attributes || {};
     const codealeaKey = findAttrKeyEndingWith(attrs, "codealea");
     if(codealeaKey){
-      return String(attrs[codealeaKey]).trim() === "1";
+      const v = String(attrs[codealeaKey]).trim();
+      if(ALEA_CODEALEA_TO_COL[v]) return v;
+      continue;
     }
     // Repli si la clé CODEALEA n'est vraiment pas trouvable telle quelle (casse/orthographe
     // inhabituelle côté serveur) : on se base alors sur le libellé texte du champ VALEUR plutôt
     // que de risquer un mauvais mapping silencieux.
     const valeurKey = findAttrKeyEndingWith(attrs, "valeur");
     const valeur = valeurKey ? normalizeForKeyword(attrs[valeurKey]) : "";
-    return valeur.includes("TRES FAIBLE");
-  });
+    if(valeur.includes("TRES FAIBLE")) return "1";
+    if(valeur.includes("FAIBLE")) return "10";
+    if(valeur.includes("MOYEN")) return "20";
+    if(valeur.includes("ELEVE") || valeur.includes("ELEVÉ") || valeur.includes("ÉLEVÉ")) return "30";
+  }
+  return null;
+}
+
+// Requête POLYGONE-CONTRE-POLYGONE (esriSpatialRelIntersects) contre la couche VECTORIELLE
+// officielle de l'aléa d'inondation (couche 2, champ CLASSEMENT) : renvoie l'ensemble des codes
+// CLASSEMENT (nombres) de tous les polygones d'aléa touchant, même partiellement, le parcel
+// cadastral fourni (rings). Contrairement à un test au point d'adresse, ceci détecte correctement
+// un aléa qui ne couvre qu'une partie du parcel (ex. le fond du terrain) — voir le commentaire
+// détaillé à la définition de ALEA_INOND_BASE.
+async function fetchAleaVectorTouchesRings(rings){
+  const geometry = JSON.stringify({ rings, spatialReference: { wkid: 31370 } });
+  const data = await fetchJsonWithRetry(ALEA_INOND_BASE + "/" + ALEA_INOND_VECTOR_LAYER + "/query", {
+    geometry, geometryType: "esriGeometryPolygon", inSR: "31370",
+    spatialRel: "esriSpatialRelIntersects",
+    outFields: "CLASSEMENT", returnGeometry: "false", outSR: "31370", f: "json"
+  }, 20000, 1);
+  const feats = data.features || [];
+  const classements = new Set();
+  for(const f of feats){
+    const cl = f.attributes && f.attributes.CLASSEMENT;
+    if(cl !== undefined && cl !== null && cl !== "") classements.add(Number(cl));
+  }
+  return classements;
+}
+
+// Échantillonne jusqu'à maxPoints sommets répartis sur le contour EXTÉRIEUR d'un polygone
+// (rings[0]), en écartant le dernier point quand il ferme le polygone (identique au premier).
+// Utilisé pour tester la couche RASTER de l'aléa d'inondation (AV, sans équivalent vectoriel) en
+// plusieurs endroits du parcel plutôt qu'au seul point d'adresse — voir resolveAleaClassesForRow.
+function sampleRingPoints(rings, maxPoints){
+  if(!rings || !rings[0] || rings[0].length < 2) return [];
+  const ring = rings[0];
+  const first = ring[0], last = ring[ring.length - 1];
+  const pts = (first[0] === last[0] && first[1] === last[1]) ? ring.slice(0, -1) : ring.slice();
+  if(!pts.length) return [];
+  if(pts.length <= maxPoints) return pts.map(p => ({ x: p[0], y: p[1] }));
+  const step = pts.length / maxPoints;
+  const sampled = [];
+  for(let i = 0; i < maxPoints; i++){
+    const idx = Math.floor(i * step);
+    sampled.push({ x: pts[idx][0], y: pts[idx][1] });
+  }
+  return sampled;
+}
+
+// Détermine, pour une adresse donnée, l'ensemble des classes d'aléa d'inondation ("1"/"10"/"20"/
+// "30", voir ALEA_CODEALEA_TO_COL) qui touchent son parcel — combine :
+//  1) le test vectoriel polygone-contre-polygone (fetchAleaVectorTouchesRings), le plus fiable,
+//     pour AW/AX/AY ;
+//  2) un échantillonnage raster sur plusieurs points du contour du parcel (+ son centroïde + le
+//     point d'adresse lui-même en filet de sécurité), seule source pour AV et renfort pour
+//     AW/AX/AY si le vectoriel ne couvre pas l'endroit exact à cette échelle.
+// Si le parcel n'a pas pu être déterminé pour cette ligne (row._parcelleRings absent — adresse
+// orpheline sans parcel trouvé, échec réseau lors du rattachement, etc.), on se rabat sur le seul
+// point d'adresse (comportement précédent), pour ne jamais perdre totalement la vérification.
+// Chaque appel réseau individuel passe par IDENTIFY_HTTP_LIMIT (le sémaphore est injecté par
+// l'appelant) pour rester soumis à la même limite de concurrence que CH/CK/CI/CJ/AZ.
+async function resolveAleaClassesForRow(row, httpLimit){
+  const classesFound = new Set();
+  const tasks = [];
+  tasks.push(
+    httpLimit.run(() => fetchAleaClasseAtPoint(row._x, row._y, ENV_POINT_MARGIN))
+      .then(c => { if(c) classesFound.add(c); })
+      .catch(() => {})
+  );
+  const rings = row._parcelleRings;
+  if(rings && rings.length){
+    tasks.push(
+      httpLimit.run(() => fetchAleaVectorTouchesRings(rings))
+        .then(classements => {
+          for(const cl of classements){
+            const col = ALEA_CLASSEMENT_TO_COL[cl];
+            if(col === "AW") classesFound.add("10");
+            else if(col === "AX") classesFound.add("20");
+            else if(col === "AY") classesFound.add("30");
+          }
+        })
+        .catch(() => {})
+    );
+    const centroid = ringCentroid(rings);
+    const samplePts = sampleRingPoints(rings, 6).concat([centroid]);
+    for(const pt of samplePts){
+      tasks.push(
+        httpLimit.run(() => fetchAleaClasseAtPoint(pt.x, pt.y, ENV_POINT_MARGIN))
+          .then(c => { if(c) classesFound.add(c); })
+          .catch(() => {})
+      );
+    }
+  }
+  await Promise.allSettled(tasks);
+  return classesFound;
 }
 
 async function fetchArcgisIdentifyByEnvelope(base, layerIds, xmin, ymin, xmax, ymax, debugLabel){
@@ -1896,7 +1999,7 @@ async function runPds(){
     let reculStationFeats = [], reculStationOk = true;
     let sdcFeats = [], solFeats = [], sdcOk = true, solOk = true;
     let gruZpuFeats = [], gruRgbsrFeats = [], gruAcousFeats = [], gcuFeats = [], gruGcuOk = true;
-    let aleaFeats = [], lidaxesFeats = [], aleaOk = true;
+    let lidaxesFeats = [], aleaOk = true;
     const captGeoms = {};
     let captForfait = [];
     let assainFeats = [], assainOk = true, assainDiagnostic = "";
@@ -1937,11 +2040,17 @@ async function runPds(){
     const foretHitByRow = new Map();
     let foretErrorRows = 0, foretHitCount = 0;
     let pprFeats = [], pprOk = true;
-    // AV (aléa d'inondation "très faible", raster) : même principe que CH/CK/CI/CJ juste au-dessus
-    // — vérifiée point par point (voir fetchAleaTresFaibleAtPoint), fusionnée à la même passe.
-    let avOk = true;
+    // AV/AW/AX/AY (aléa d'inondation, raster) : même principe que CH/CK/CI/CJ juste au-dessus —
+    // vérifiées point par point (voir fetchAleaClasseAtPoint), fusionnées à la même passe. Les 4
+    // colonnes partagent UN SEUL appel réseau par adresse (voir ALEA_CODEALEA_TO_COL), donc un
+    // seul jeu de compteurs succès/erreur (aleaRasterOk/aleaRasterErrorRows) suffit.
+    let aleaRasterOk = true;
+    let aleaRasterErrorRows = 0;
     const avHitByRow = new Map();
-    let avErrorRows = 0, avHitCount = 0;
+    const awHitByRow = new Map();
+    const axHitByRow = new Map();
+    const ayHitByRow = new Map();
+    let avHitCount = 0, awHitCount = 0, axHitCount = 0, ayHitCount = 0;
     // AZ (risque de ruissellement diffus, ERRUISSOL) : BUG CORRIGÉ — comme CH/CK/CI/CJ/AV avant
     // correction, AZ était interrogée via fetchArcgisIdentifyByEnvelope (UNE SEULE requête
     // /identify avec un point géométrie = coin de l'enveloppe globale du lot, imageDisplay fixe
@@ -2040,20 +2149,16 @@ async function runPds(){
         }
         taskProgress();
       },
-      // Aléa d'inondation (AW-AY) + ruissellement diffus (AZ) + axes de concentration (BA).
-      // AV (aléa très faible) n'a pas de source fiable identifiée : reste à N (voir commentaire
-      // plus haut, dans la définition de ALEA_INOND_BASE).
+      // Axes de concentration du ruissellement (BA). AV/AW/AX/AY (aléa d'inondation) et AZ
+      // (ruissellement diffus) ne sont plus récupérées ici : voir avHitByRow/awHitByRow/
+      // axHitByRow/ayHitByRow/azHitByRow et la passe point par point ci-dessous (même correctif
+      // que CH), une enveloppe partagée n'étant pas fiable sur ces couches raster.
       async () => {
         try{
-          aleaFeats = await fetchArcgisIdentifyByEnvelope(ALEA_INOND_BASE, ALEA_INOND_LAYER, xmin, ymin, xmax, ymax, "CLASSEMENT");
-          // console.log(aleaFeats);
-          // AZ (ruissellement diffus) n'est plus récupérée ici : voir azHitByRow / la passe point
-          // par point ci-dessous (même correctif que CH), une enveloppe partagée n'étant pas fiable
-          // sur cette couche raster.
           lidaxesFeats = await fetchArcgisIdentifyByEnvelope(LIDAXES_BASE, LIDAXES_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
         }catch(e){
           aleaOk = false;
-          setStatus(status2El, "Aléa d'inondation / ruissellement non récupéré (" + e.message + ") — AV-BA laissées à N.", "warn");
+          setStatus(status2El, "Axes de concentration du ruissellement non récupérés (" + e.message + ") — BA laissée à N.", "warn");
         }
         taskProgress();
       },
@@ -2370,7 +2475,7 @@ async function runPds(){
       };
       setStatus(status2El, `Vérification de l'érosion hydrique diffuse (CH), du masque forestier (CK), des arbres et haies remarquables (CI), du réseau Natura 2000 (CJ) et de l'aléa d'inondation très faible (AV) et du ruissellement diffus (AZ) sur ${totalWithCoords} adresse(s)…`);
       await mapLimit(withCoords, ROW_IDENTIFY_CONCURRENCY, async (row) => {
-        const [chRes, foretRes, ahremRes, natura2000Res, avRes, azRes] = await Promise.allSettled([
+        const [chRes, foretRes, ahremRes, natura2000Res, aleaRes, azRes] = await Promise.allSettled([
           // Valeur de pixel 7 = classe "très faible" (Raster.DESCRIPTION), seule valeur qui doit
           // rester à "N" ; toute autre valeur de classe (1 à 6…) reste un vrai "O".
           IDENTIFY_HTTP_LIMIT.run(() =>
@@ -2396,10 +2501,13 @@ async function runPds(){
           IDENTIFY_HTTP_LIMIT.run(() =>
             fetchArcgisIdentifyHitAtPoint(NATURA2000_BASE, [NATURA2000_LAYER], row._x, row._y, ENV_POINT_MARGIN)
           ),
-          // AV : aléa d'inondation "très faible" (CODEALEA=1), voir fetchAleaTresFaibleAtPoint.
-          IDENTIFY_HTTP_LIMIT.run(() =>
-            fetchAleaTresFaibleAtPoint(row._x, row._y, ENV_POINT_MARGIN)
-          ),
+          // AV/AW/AX/AY : aléa d'inondation. resolveAleaClassesForRow combine un test vectoriel
+          // "le parcel touche la couche Aléa" (polygone-contre-polygone) et un échantillonnage
+          // raster sur le contour du parcel — voir le commentaire détaillé à sa définition. Ce
+          // n'est PAS un simple appel HTTP : c'est un orchestrateur qui lance lui-même plusieurs
+          // requêtes via IDENTIFY_HTTP_LIMIT (passé en paramètre), donc on ne le ré-enveloppe pas
+          // dans un IDENTIFY_HTTP_LIMIT.run() supplémentaire ici.
+          resolveAleaClassesForRow(row, IDENTIFY_HTTP_LIMIT),
           // AZ : risque de ruissellement diffus (ERRUISSOL). Valeur de pixel 1 = "non cartographié
           // ou non respect de la validité du modèle" (PAS un risque), seule valeur qui doit rester
           // à "N" ; toute autre valeur de classe (2, 3, 4, 5…) reste un vrai "O" — même logique que
@@ -2428,10 +2536,18 @@ async function runPds(){
         }else{
           natura2000ErrorRows++;
         }
-        if(avRes.status === "fulfilled"){
-          if(avRes.value){ avHitByRow.set(row, true); avHitCount++; }
+        if(aleaRes.status === "fulfilled"){
+          // resolveAleaClassesForRow renvoie un Set de classes ("1"/"10"/"20"/"30") : un même
+          // parcel peut légitimement toucher PLUSIEURS classes d'aléa à la fois (ex. faible ET
+          // moyen sur des parties différentes du terrain) — on marque donc chaque colonne
+          // concernée, sans s'arrêter à la première trouvée.
+          const classes = aleaRes.value || new Set();
+          if(classes.has("1")){ avHitByRow.set(row, true); avHitCount++; }
+          if(classes.has("10")){ awHitByRow.set(row, true); awHitCount++; }
+          if(classes.has("20")){ axHitByRow.set(row, true); axHitCount++; }
+          if(classes.has("30")){ ayHitByRow.set(row, true); ayHitCount++; }
         }else{
-          avErrorRows++;
+          aleaRasterErrorRows++;
         }
         if(azRes.status === "fulfilled"){
           if(azRes.value){ azHitByRow.set(row, true); azHitCount++; }
@@ -2477,12 +2593,12 @@ async function runPds(){
           setStatus(status2El, `Réseau Natura 2000 (CJ) : ${natura2000ErrorRows} adresse(s) sur ${withCoords.length} non vérifiée(s) (erreur réseau) — laissées à N.`, "warn");
         }
       }
-      if(avErrorRows > 0){
-        if(avErrorRows === withCoords.length){
-          avOk = false;
-          setStatus(status2El, "Aléa d'inondation très faible (AV) non récupéré (échec réseau sur toutes les adresses) — colonne laissée à N.", "warn");
+      if(aleaRasterErrorRows > 0){
+        if(aleaRasterErrorRows === withCoords.length){
+          aleaRasterOk = false;
+          setStatus(status2El, "Aléa d'inondation (AV/AW/AX/AY) non récupéré (échec réseau sur toutes les adresses) — colonnes laissées à N.", "warn");
         }else{
-          setStatus(status2El, `Aléa d'inondation très faible (AV) : ${avErrorRows} adresse(s) sur ${withCoords.length} non vérifiée(s) (erreur réseau) — laissées à N.`, "warn");
+          setStatus(status2El, `Aléa d'inondation (AV/AW/AX/AY) : ${aleaRasterErrorRows} adresse(s) sur ${withCoords.length} non vérifiée(s) (erreur réseau) — laissées à N.`, "warn");
         }
       }
       if(azErrorRows > 0){
@@ -2608,33 +2724,12 @@ async function runPds(){
           }
         }
 
-        // --- Aléa d'inondation (AW-AY) via CLASSEMENT, ruissellement diffus (AZ), axe de
-        // concentration du ruissellement (BA, avec tolérance de proximité car couche linéaire).
+        // --- Ruissellement diffus (AZ), axe de concentration du ruissellement (BA, avec
+        // tolérance de proximité car couche linéaire). AW/AX/AY (aléa d'inondation) ne sont plus
+        // déterminées ici via une enveloppe vectorielle partagée : voir plus bas, où elles sont
+        // lues depuis awHitByRow/axHitByRow/ayHitByRow (remplies point par point sur la couche
+        // raster, exactement comme AV — voir fetchAleaClasseAtPoint).
         if(aleaOk){
-          let aleaHit = false;
-          for(const f of aleaFeats){
-            if(!f.geometry || !f.geometry.rings){
-              // Sécurité : si un résultat sans géométrie passe malgré tout (service qui ignore
-              // returnGeometry=true, p.ex.), on le signale au lieu de le tester silencieusement
-              // contre un point (ringsHitPoint renverrait false de toute façon).
-              console.warn(`[Aléa inondation] feature sans rings pour ${row.rue || ""} ${row.numero || ""} — CLASSEMENT=${f.attributes && f.attributes.CLASSEMENT}`, f);
-              continue;
-            }
-            if(ringsHitPoint(f, row._x, row._y)){
-              const classement = f.attributes.CLASSEMENT;
-              const col = ALEA_CLASSEMENT_TO_COL[classement];
-              if(col){
-                pds[col] = "O";
-                aleaHit = true;
-              }else{
-                console.warn(`[Aléa inondation] CLASSEMENT inconnu (non mappé vers AW/AX/AY) : ${classement} — ${row.rue || ""} ${row.numero || ""}`, f.attributes);
-              }
-              break;
-            }
-          }
-          if(aleaFeats.length && !aleaHit){
-            console.log(`[Aléa inondation] ${aleaFeats.length} polygone(s) dans l'enveloppe mais aucun ne contient le point ${row.rue || ""} ${row.numero || ""} (${row._x}, ${row._y}) — AW/AX/AY restent à N pour cette ligne.`);
-          }
           // AZ (ruissellement diffus) : n'est plus déterminée ici via une enveloppe partagée
           // (couche raster, mêmes soucis de résolution/échelle que CH — voir azHitByRow, rempli
           // point par point plus haut, exactement comme CH/CK/CI/CJ/AV). azHitCount est déjà
@@ -2793,10 +2888,14 @@ async function runPds(){
         // --- Masque forestier (CK) — déjà résolu point par point ci-dessus (voir foretHitByRow),
         // même logique que CH : on ne fait que lire le résultat ici.
         if(foretOk && foretHitByRow.get(row)){ pds["CK"] = "O"; }
-        // --- Aléa d'inondation "très faible" (AV) — déjà résolu point par point ci-dessus (voir
-        // avHitByRow / fetchAleaTresFaibleAtPoint), même logique que CH/CK/CI/CJ : on ne fait que
-        // lire le résultat ici.
-        if(avOk && avHitByRow.get(row)){ pds["AV"] = "O"; }
+        // --- Aléa d'inondation (AV très faible / AW faible / AX moyen / AY élevé) — déjà résolu
+        // point par point ci-dessus (voir avHitByRow/awHitByRow/axHitByRow/ayHitByRow et
+        // fetchAleaClasseAtPoint), même logique que CH/CK/CI/CJ : on ne fait que lire le résultat
+        // ici, sans nouveau test géométrique.
+        if(aleaRasterOk && avHitByRow.get(row)){ pds["AV"] = "O"; }
+        if(aleaRasterOk && awHitByRow.get(row)){ pds["AW"] = "O"; }
+        if(aleaRasterOk && axHitByRow.get(row)){ pds["AX"] = "O"; }
+        if(aleaRasterOk && ayHitByRow.get(row)){ pds["AY"] = "O"; }
         // --- Périmètre de préemption (CM)
         if(pprOk){
           for(const f of pprFeats){
@@ -2826,8 +2925,8 @@ async function runPds(){
     if(!sdcOk) notes.push("SDC non disponible");
     if(!solOk) notes.push("SOL non disponible");
     if(!gruGcuOk) notes.push("GRU/GCU non disponibles");
-    if(!aleaOk) notes.push("aléa d'inondation/ruissellement non disponible");
-    if(!avOk) notes.push("aléa d'inondation très faible (AV) non disponible");
+    if(!aleaOk) notes.push("axes de concentration du ruissellement (BA) non disponibles");
+    if(!aleaRasterOk) notes.push("aléa d'inondation (AV/AW/AX/AY) non disponible");
     if(!azOk) notes.push("ruissellement diffus (AZ) non disponible");
     if(!cawOk) notes.push("CAW non disponible");
     if(!ipicOk) notes.push("IPIC non disponible");
@@ -2862,13 +2961,16 @@ async function runPds(){
     notes.push(`CJ: ${natura2000HitCount}/${withCoords.length} en O`);
     notes.push(`AZ: ${azHitCount}/${withCoords.length} en O`);
     notes.push(`AV: ${avHitCount}/${withCoords.length} en O`);
+    notes.push(`AW: ${awHitCount}/${withCoords.length} en O`);
+    notes.push(`AX: ${axHitCount}/${withCoords.length} en O`);
+    notes.push(`AY: ${ayHitCount}/${withCoords.length} en O`);
     for(const layer of BDES_LAYERS){ if(!bdesOkByCol[layer.col]) notes.push(`BDES "${layer.label}" non disponible`); }
     const noteStr = notes.length ? ` (${notes.join(" ; ")})` : "";
     const isaAllOk = ISA_LAYERS.every(l => isaOkByCol[l.col]);
     const bdesAllOk = BDES_LAYERS.every(l => bdesOkByCol[l.col]);
     const allOk = assainOk && sdcOk && solOk && gruGcuOk && aleaOk && cawOk && ipicOk && patMndOk && bcPatOk && patLstsavOk && patExcOk
       && lotOk && planhpOk && rmbmtOk && sarOk && sevesoOk && renovOk && revitOk && preOk && tnuOk
-      && terrilsOk && isaAllOk && zipOk && erosionOk && ahremOk && natura2000Ok && foretOk && pprOk && bdesAllOk && avOk;
+      && terrilsOk && isaAllOk && zipOk && erosionOk && ahremOk && natura2000Ok && foretOk && pprOk && bdesAllOk && aleaRasterOk;
     setStatus(status2El, `Terminé — plan de secteur, SDC/SOL, GRU/GCU, aléa inondation/ruissellement, captages, assainissement, patrimoine, urbanisme opérationnel, terrils, sites à réaménager (inventaire), environnement, préemption et BDES complétés pour ${lastRows.length} ligne(s) (${withCoords.length} avec coordonnées)${noteStr}.`, allOk ? "ok" : "warn");
     renderTable(lastRows);
     $("btn-xlsx").disabled = false;
