@@ -1471,16 +1471,22 @@ async function runSearch(){
 
 // ---------- Étape 2 : Plan de secteur, SDC/SOL, GRU/GCU, aléa inondation, captages, assainissement, patrimoine ----------
 
-async function fetchPdsLayerInEnvelope(layerId, xmin, ymin, xmax, ymax, outFields){
+// timeoutMs/retries/pageSize sont optionnels : par défaut (undefined), le comportement reste
+// celui d'origine côté taille de page (2000) et délai (25s), mais 2 nouvelles tentatives sont
+// désormais appliquées par défaut (au lieu d'aucune) — voir le commentaire détaillé sur
+// fetchArcgisLayerInEnvelope juste après, qui documente la raison (communes à grande étendue :
+// BRAINE-L'ALLEUD, AYWAILLE, JURBISE, BERTRIX — HTTP2_PROTOCOL_ERROR / CERT_VERIFIER_CHANGED
+// observés sur de grosses réponses, souvent transitoires).
+async function fetchPdsLayerInEnvelope(layerId, xmin, ymin, xmax, ymax, outFields, timeoutMs, retries, pageSizeOverride){
   const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
-  let offset = 0; const pageSize = 2000; let all = [];
+  let offset = 0; const pageSize = pageSizeOverride || 2000; let all = [];
   while(true){
-    const data = await fetchJson(PDS_BASE + "/" + layerId + "/query", {
+    const data = await fetchJsonWithRetry(PDS_BASE + "/" + layerId + "/query", {
       geometry, geometryType: "esriGeometryEnvelope", inSR: "31370",
       spatialRel: "esriSpatialRelIntersects",
       outFields, returnGeometry: "true", outSR: "31370",
       resultRecordCount: pageSize, resultOffset: offset, f: "json"
-    });
+    }, timeoutMs, retries == null ? 2 : retries);
     const feats = data.features || [];
     all = all.concat(feats);
     if(feats.length < pageSize) break;
@@ -1495,16 +1501,28 @@ async function fetchPdsLayerInEnvelope(layerId, xmin, ymin, xmax, ymax, outField
 // services Terrils / ISA / ZIP / érosion diffuse / AHREM / Natura 2000 / forêt / PPR) — même
 // logique de pagination que fetchPdsLayerInEnvelope, mais paramétrée par l'URL de base du service
 // pour éviter de dupliquer le code par couche.
-async function fetchArcgisLayerInEnvelope(base, layerId, xmin, ymin, xmax, ymax, outFields){
+// timeoutMs/retries/pageSizeOverride sont optionnels. Historique : erreurs observées uniquement
+// sur les communes à très grande étendue (BRAINE-L'ALLEUD, AYWAILLE, JURBISE, BERTRIX), de deux
+// natures différentes :
+//  - "délai dépassé (25s)" : réponse simplement lente sur une grosse enveloppe (ex. TNU) ;
+//  - net::ERR_HTTP2_PROTOCOL_ERROR / net::ERR_CERT_VERIFIER_CHANGED (statut réseau souvent
+//    "200 OK" malgré tout) : incidents transitoires côté connexion (flux HTTP/2 coupé sur une
+//    grosse réponse, ou re-vérification TLS interrompue — fréquent avec un antivirus/proxy qui
+//    inspecte le HTTPS, d'autant plus probable avec beaucoup de requêtes en parallèle). Ni l'un ni
+//    l'autre n'indique une requête invalide : une nouvelle tentative après un court délai suffit
+//    en général, éventuellement avec une page plus petite pour réduire la taille de la réponse.
+// Par défaut, 2 nouvelles tentatives sont désormais appliquées (au lieu d'aucune auparavant) pour
+// tous les appelants existants ; timeoutMs/pageSizeOverride restent inchangés si non fournis.
+async function fetchArcgisLayerInEnvelope(base, layerId, xmin, ymin, xmax, ymax, outFields, timeoutMs, retries, pageSizeOverride){
   const geometry = JSON.stringify({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 31370 } });
-  let offset = 0; const pageSize = 2000; let all = [];
+  let offset = 0; const pageSize = pageSizeOverride || 2000; let all = [];
   while(true){
-    const data = await fetchJson(base + "/" + layerId + "/query", {
+    const data = await fetchJsonWithRetry(base + "/" + layerId + "/query", {
       geometry, geometryType: "esriGeometryEnvelope", inSR: "31370",
       spatialRel: "esriSpatialRelIntersects",
       outFields, returnGeometry: "true", outSR: "31370",
       resultRecordCount: pageSize, resultOffset: offset, f: "json"
-    });
+    }, timeoutMs, retries == null ? 2 : retries);
     const feats = data.features || [];
     all = all.concat(feats);
     if(feats.length < pageSize) break;
@@ -1591,11 +1609,15 @@ async function fetchArcgisIdentifyHitAtPoint(base, layerIds, x, y, marginMeters,
   const imageDisplaySize = 500; // px — avec localExtentMeters ci-dessus, résolution ≈ 0.2-0.5 m/px
   const resolution = (localExtentMeters * 2) / imageDisplaySize;
   const toleranceParam = Math.max(1, Math.round(marginMeters / resolution));
-  // Timeout dédié plus court (12s au lieu des 25s par défaut de fetchJson) + une nouvelle
-  // tentative automatique (fetchJsonWithRetry) : sur un gros lot d'adresses, ces requêtes
-  // partent par centaines/milliers, et un service ponctuellement lent ou saturé ne doit ni
-  // bloquer la ligne 25s avant d'échouer, ni faire basculer définitivement la colonne à "N" dès
-  // le premier accroc — voir le commentaire détaillé à la définition de fetchJsonWithRetry.
+  // Timeout dédié plus court (12s au lieu des 25s par défaut de fetchJson) + 2 nouvelles tentatives
+  // automatiques (fetchJsonWithRetry, porté de 1 à 2 après des échecs observés en rafale sur les
+  // communes à très grande étendue — BRAINE-L'ALLEUD, AYWAILLE, JURBISE, BERTRIX — où de nombreux
+  // points d'une même colonne tombaient à "N" d'un coup : net::ERR_CERT_VERIFIER_CHANGED, un
+  // incident réseau transitoire côté navigateur/OS, plus probable avec beaucoup de requêtes
+  // parallèles). Sur un gros lot d'adresses, ces requêtes partent par centaines/milliers, et un
+  // service ponctuellement lent ou saturé ne doit ni bloquer la ligne 25s avant d'échouer, ni faire
+  // basculer définitivement la colonne à "N" dès le premier accroc — voir le commentaire détaillé à
+  // la définition de fetchJsonWithRetry.
   const data = await fetchJsonWithRetry(base + "/identify", {
     geometry, geometryType: "esriGeometryPoint", sr: String(sr),
     layers: "all:" + ids.join(","),
@@ -1603,7 +1625,7 @@ async function fetchArcgisIdentifyHitAtPoint(base, layerIds, x, y, marginMeters,
     mapExtent: (x - localExtentMeters) + "," + (y - localExtentMeters) + "," + (x + localExtentMeters) + "," + (y + localExtentMeters),
     imageDisplay: imageDisplaySize + "," + imageDisplaySize + ",96",
     returnGeometry: "false", f: "json"
-  }, 12000, 1);
+  }, 12000, 2);
   const results = data.results || [];
   // IMPORTANT : les 3 couches candidates (prairie / culture non sarclée / culture sarclée) sont très
   // probablement des couches RASTER (c'est cohérent avec le fait que "/query" renvoie une erreur 400
@@ -2073,7 +2095,11 @@ async function runPds(){
 
     const tasks = [
       async () => {
-        zones = await fetchPdsLayerInEnvelope(22, xmin, ymin, xmax, ymax, "AFFECT");
+        // Couche la plus lourde du plan de secteur (zones d'affectation, geometry complexe sur
+        // toute la commune) : délai porté à 60s, page réduite à 500 pour limiter le poids de
+        // chaque réponse sur les communes à grande étendue (voir commentaire détaillé sur
+        // fetchArcgisLayerInEnvelope) — 2 nouvelles tentatives déjà par défaut.
+        zones = await fetchPdsLayerInEnvelope(22, xmin, ymin, xmax, ymax, "AFFECT", 60000, 2, 500);
         taskProgress();
       },
       async () => {
@@ -2321,7 +2347,13 @@ async function runPds(){
       },
       async () => {
         try{
-          tnuFeats = await fetchArcgisLayerInEnvelope(TNU_BASE, TNU_LAYER, xmin, ymin, xmax, ymax, "OBJECTID");
+          // Délai porté à 60s, 2 nouvelles tentatives (déjà la valeur par défaut désormais, mais
+          // explicité ici) + page réduite à 500 pour cette couche : sur les communes à grande
+          // étendue (BRAINE-L'ALLEUD, AYWAILLE, JURBISE, BERTRIX...), une recherche commune entière
+          // (sans filtre de rue) couvre une très large superficie et la réponse par page de 2000
+          // pouvait être assez volumineuse pour déclencher un ERR_HTTP2_PROTOCOL_ERROR en cours de
+          // transfert ; réduire la taille de page limite le poids de chaque réponse.
+          tnuFeats = await fetchArcgisLayerInEnvelope(TNU_BASE, TNU_LAYER, xmin, ymin, xmax, ymax, "OBJECTID", 60000, 2, 500);
         }catch(e){
           tnuOk = false;
           setStatus(status2El, "Terrains non urbanisés (TNU) non récupérés (" + e.message + ") — BY laissée à N.", "warn");
